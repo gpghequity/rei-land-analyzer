@@ -1,4 +1,5 @@
-export default function CommercialTab() {
+// Accepts forward-compat props but ignores them (placeholder tab).
+export default function CommercialTab(_props) {
   return (
     <section>
       <h2 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 600 }}>Commercial</h2>

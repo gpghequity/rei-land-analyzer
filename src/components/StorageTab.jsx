@@ -26,8 +26,29 @@ const INITIAL = {
   growthRate: 0.03
 }
 
-export default function StorageTab() {
-  const [inputs, setInputs] = useState(INITIAL)
+// Hydrate INITIAL with values pulled from URL params (if any) so the operator
+// can deep-link from Fast Calc with everything pre-filled.
+function buildInitial(urlState, sharedUrlState) {
+  const u = urlState || {}
+  const s = sharedUrlState || {}
+  return {
+    ...INITIAL,
+    propertyName: s.propertyName ?? INITIAL.propertyName,
+    address: s.address ?? INITIAL.address,
+    askingPrice: s.askingPrice != null ? String(s.askingPrice) : INITIAL.askingPrice,
+    grossDollarsIn: u.grossDollarsIn != null ? String(u.grossDollarsIn) : INITIAL.grossDollarsIn,
+    sellerExpensePct: u.sellerExpensePct != null ? String(u.sellerExpensePct) : INITIAL.sellerExpensePct,
+    annualOpEx: u.annualOpEx != null ? String(u.annualOpEx) : INITIAL.annualOpEx,
+    t12Verified: u.t12Verified ?? INITIAL.t12Verified,
+    rentRollVerified: u.rentRollVerified ?? INITIAL.rentRollVerified,
+    occupancyVerified: u.occupancyVerified ?? INITIAL.occupancyVerified,
+    verifiedBy: u.verifiedBy ?? INITIAL.verifiedBy,
+    growthRate: u.growthRate != null ? u.growthRate : INITIAL.growthRate
+  }
+}
+
+export default function StorageTab({ urlState, sharedUrlState }) {
+  const [inputs, setInputs] = useState(() => buildInitial(urlState, sharedUrlState))
   const [results, setResults] = useState(null)
 
   const update = (field, value) => setInputs(prev => ({ ...prev, [field]: value }))
@@ -124,9 +145,88 @@ export default function StorageTab() {
         <div style={errorBoxStyle}>{results.error}</div>
       )}
 
-      {results && !results.error && <StorageResults results={results} askingPrice={parseFloat(inputs.askingPrice) || 0} />}
+      {results && !results.error && (
+        <div className="results-section">
+          <StorageResults results={results} askingPrice={parseFloat(inputs.askingPrice) || 0} />
+          <LoiPrepStorage inputs={inputs} results={results} />
+        </div>
+      )}
     </section>
   )
+}
+
+function LoiPrepStorage({ inputs, results }) {
+  const groupA125 = results.scenarios.find(s => s.group === 'A' && s.dscrLens === 1.25 && s.treatment === 'sunk')
+  const noi = results.noiResult.noi
+  const ask = parseFloat(inputs.askingPrice) || 0
+  const verdict = results.verdict
+  const printNow = () => { window.print() }
+
+  return (
+    <div className="loi-prep-section">
+      <h3>LOI Prep — Storage</h3>
+      <div className="loi-prep-grid">
+        {inputs.propertyName && <div className="loi-prep-row"><span className="lp-k">Property</span><span className="lp-v">{inputs.propertyName}</span></div>}
+        {inputs.address && <div className="loi-prep-row"><span className="lp-k">Address</span><span className="lp-v">{inputs.address}</span></div>}
+        <div className="loi-prep-row"><span className="lp-k">Asset type</span><span className="lp-v">Storage</span></div>
+        {ask > 0 && <div className="loi-prep-row"><span className="lp-k">Asking price</span><span className="lp-v">{formatMoney(ask)}</span></div>}
+        <div className="loi-prep-row"><span className="lp-k">Verified NOI (T-12)</span><span className="lp-v">{formatMoney(noi)}</span></div>
+        {ask > 0 && <div className="loi-prep-row"><span className="lp-k">Implied cap on ask</span><span className="lp-v">{formatPct(noi / ask)}</span></div>}
+        {groupA125 && (
+          <>
+            <div className="loi-prep-row"><span className="lp-k">Recommended max purchase (Bank, 1.25x DSCR)</span><span className="lp-v">{formatMoney(groupA125.maxPurchase)}</span></div>
+            <div className="loi-prep-row"><span className="lp-k">Recommended offer (− wholesale fee)</span><span className="lp-v">{formatMoney(groupA125.yourOffer)}</span></div>
+            <div className="loi-prep-row"><span className="lp-k">Annual debt service (bank)</span><span className="lp-v">{formatMoney(groupA125.bankAnnualDS)}</span></div>
+            <div className="loi-prep-row"><span className="lp-k">Annual pocket cash (post-DS)</span><span className="lp-v">{formatMoney(groupA125.pocket.pocketCash)}</span></div>
+            {groupA125.equityReq && <div className="loi-prep-row"><span className="lp-k">Total equity required</span><span className="lp-v">{formatMoney(groupA125.equityReq.totalEquityRequired)}</span></div>}
+          </>
+        )}
+        <div className="loi-prep-row"><span className="lp-k">Verdict</span><span className="lp-v">{verdict.verdict}</span></div>
+      </div>
+
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px dashed #d4dae8', fontSize: 12, color: '#5a6a8a', fontStyle: 'italic' }}>
+        This is a pre-LOI internal worksheet. Math Bible v3 tougher-of-the-engines numbers shown above. Verify all
+        figures against the source T-12 / appraisal / lender quote before issuing an actual LOI.
+      </div>
+
+      <div className="no-print" style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+        <button type="button" onClick={printNow} style={btnStyle}>Print LOI Prep</button>
+        <button type="button" onClick={() => navigator.clipboard?.writeText(buildPlainText(inputs, results, groupA125))} style={btnGhostStyle}>Copy as text</button>
+      </div>
+    </div>
+  )
+}
+
+function buildPlainText(inputs, results, groupA125) {
+  const lines = []
+  const noi = results.noiResult.noi
+  const ask = parseFloat(inputs.askingPrice) || 0
+  lines.push('LOI Prep — Storage')
+  lines.push('')
+  if (inputs.propertyName) lines.push(`Property: ${inputs.propertyName}`)
+  if (inputs.address) lines.push(`Address: ${inputs.address}`)
+  lines.push('Asset type: Storage')
+  if (ask) lines.push(`Asking: ${formatMoney(ask)}`)
+  lines.push(`Verified NOI: ${formatMoney(noi)}`)
+  if (ask) lines.push(`Implied cap on ask: ${formatPct(noi / ask)}`)
+  if (groupA125) {
+    lines.push(`Max purchase (Bank, 1.25x DSCR): ${formatMoney(groupA125.maxPurchase)}`)
+    lines.push(`Recommended offer: ${formatMoney(groupA125.yourOffer)}`)
+    lines.push(`Annual DS: ${formatMoney(groupA125.bankAnnualDS)}`)
+    lines.push(`Annual pocket cash: ${formatMoney(groupA125.pocket.pocketCash)}`)
+    if (groupA125.equityReq) lines.push(`Total equity required: ${formatMoney(groupA125.equityReq.totalEquityRequired)}`)
+  }
+  lines.push(`Verdict: ${results.verdict.verdict}`)
+  lines.push('')
+  lines.push('Pre-LOI internal worksheet — Math Bible v3.')
+  lines.push('Verify all figures against source T-12 / appraisal / lender quote.')
+  return lines.join('\n')
+}
+
+const btnGhostStyle = {
+  padding: '12px 24px', fontSize: 14, fontWeight: 600,
+  color: '#1a2456', backgroundColor: 'transparent',
+  border: '1px solid #c8d0e0', borderRadius: 6, cursor: 'pointer'
 }
 
 function StorageResults({ results, askingPrice }) {

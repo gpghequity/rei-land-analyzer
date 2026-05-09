@@ -23,11 +23,34 @@ const INITIAL_RENTAL = {
   compsRaw: ''
 }
 
-export default function ResidentialTab() {
-  const [mode, setMode] = useState('flip')
-  const [flipInputs, setFlipInputs] = useState(INITIAL_FLIP)
-  const [rentalInputs, setRentalInputs] = useState(INITIAL_RENTAL)
+function buildFlipInitial(urlState) {
+  const u = urlState || {}
+  return {
+    ...INITIAL_FLIP,
+    arv: u.arv != null ? String(u.arv) : INITIAL_FLIP.arv,
+    rehab: u.rehab != null ? String(u.rehab) : INITIAL_FLIP.rehab,
+    compsRaw: u.compsRaw ?? INITIAL_FLIP.compsRaw
+  }
+}
+
+function buildRentalInitial(urlState) {
+  const u = urlState || {}
+  return {
+    ...INITIAL_RENTAL,
+    arv: u.arv != null ? String(u.arv) : INITIAL_RENTAL.arv,
+    rehab: u.rehab != null ? String(u.rehab) : INITIAL_RENTAL.rehab,
+    grossDollarsIn: u.grossDollarsIn != null ? String(u.grossDollarsIn) : INITIAL_RENTAL.grossDollarsIn,
+    hardCosts: u.hardCosts != null ? String(u.hardCosts) : INITIAL_RENTAL.hardCosts,
+    compsRaw: u.compsRaw ?? INITIAL_RENTAL.compsRaw
+  }
+}
+
+export default function ResidentialTab({ urlState, sharedUrlState }) {
+  const [mode, setMode] = useState((urlState && urlState.mode) || 'flip')
+  const [flipInputs, setFlipInputs] = useState(() => buildFlipInitial(urlState))
+  const [rentalInputs, setRentalInputs] = useState(() => buildRentalInitial(urlState))
   const [results, setResults] = useState(null)
+  const propertyContext = sharedUrlState || {}
 
   const updateFlip = (f, v) => setFlipInputs(p => ({ ...p, [f]: v }))
   const updateRental = (f, v) => setRentalInputs(p => ({ ...p, [f]: v }))
@@ -107,9 +130,68 @@ export default function ResidentialTab() {
       <button type="button" onClick={calc} style={btnStyle}>Calculate</button>
 
       {results && results.error && <div style={errorBoxStyle}>{results.error}</div>}
-      {results && !results.error && results.mode === 'flip' && <FlipResults r={results} />}
-      {results && !results.error && results.mode === 'rental' && <RentalResults r={results} />}
+      {results && !results.error && (
+        <div className="results-section">
+          {results.mode === 'flip' && <FlipResults r={results} />}
+          {results.mode === 'rental' && <RentalResults r={results} />}
+          <LoiPrepResidential mode={results.mode} results={results} propertyContext={propertyContext} />
+        </div>
+      )}
     </section>
+  )
+}
+
+function LoiPrepResidential({ mode, results, propertyContext }) {
+  const printNow = () => { window.print() }
+  const ctx = propertyContext || {}
+
+  const rows = []
+  if (ctx.propertyName) rows.push(['Property', ctx.propertyName])
+  if (ctx.address) rows.push(['Address', ctx.address])
+  rows.push(['Asset type', mode === 'flip' ? 'Residential — Flip' : 'Residential — Rental'])
+  if (ctx.askingPrice) rows.push(['Asking price', formatMoney(ctx.askingPrice)])
+
+  if (mode === 'flip') {
+    rows.push(['ARV used', formatMoney(results.usedARV)])
+    rows.push(['ARV source', `${results.arvResult.confidence}${results.arvResult.flag ? ' — ' + results.arvResult.flag : ''}`])
+    rows.push(['Rehab budget', formatMoney(results.rehab)])
+    rows.push(['End-buyer max purchase (70% rule)', formatMoney(results.mao.endBuyer)])
+    rows.push(['Recommended offer (− wholesale fee)', formatMoney(results.mao.yourOffer)])
+    rows.push(['Implied flipper profit (sanity check)', formatMoney(results.flipperProfit)])
+  } else {
+    const standard = results.modes.standard
+    const dscrStd = results.dscr.standard
+    rows.push(['Annual rent (gross)', formatMoney(results.inputs.grossDollarsIn)])
+    rows.push(['Hard OpEx', formatMoney(results.inputs.hardCosts)])
+    rows.push(['NOI (Standard, 20% pad)', formatMoney(standard.noi)])
+    if (results.mao.endBuyer > 0) {
+      rows.push(['MAO end-buyer purchase', formatMoney(results.mao.endBuyer)])
+      rows.push(['Recommended offer', formatMoney(results.mao.yourOffer)])
+      rows.push(['DSCR @ MAO (Standard NOI)', dscrStd.dscr.toFixed(2)])
+      rows.push(['Pass DSCR floor?', dscrStd.pass ? 'YES (≥ 1.25)' : 'NO (< 1.25)'])
+    }
+    rows.push(['Owner Hard Mode pMax (INTERNAL ONLY)', formatMoney(results.ownerHardMode.pMax)])
+  }
+
+  return (
+    <div className="loi-prep-section">
+      <h3>LOI Prep — {mode === 'flip' ? 'Residential Flip' : 'Residential Rental'}</h3>
+      <div className="loi-prep-grid">
+        {rows.map(([k, v]) => (
+          <div key={k} className="loi-prep-row">
+            <span className="lp-k">{k}</span>
+            <span className="lp-v">{v}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px dashed #d4dae8', fontSize: 12, color: '#5a6a8a', fontStyle: 'italic' }}>
+        Pre-LOI internal worksheet. Math Bible v3 — tougher of the available engines.
+        Owner Hard Mode is INTERNAL — never put on a team report or seller letter.
+      </div>
+      <div className="no-print" style={{ marginTop: 16 }}>
+        <button type="button" onClick={printNow} style={btnStyle}>Print LOI Prep</button>
+      </div>
+    </div>
   )
 }
 

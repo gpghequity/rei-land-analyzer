@@ -39,7 +39,10 @@ const INITIAL = {
   environmentalFee: '5000'
 }
 
-export default function MhpTab() {
+// Accepts urlState + sharedUrlState props for forward compat with App.jsx;
+// MHP URL params not yet wired (TODO — per memory, the MHP form is large
+// enough that URL hydration deserves its own commit).
+export default function MhpTab(_props) {
   const [inputs, setInputs] = useState(INITIAL)
   const [results, setResults] = useState(null)
   const [showUtilities, setShowUtilities] = useState(false)

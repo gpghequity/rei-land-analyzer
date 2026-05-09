@@ -1,12 +1,124 @@
+/* PwP brand palette */
+:root {
+  --navy: #0A0F2C;
+  --navy-mid: #131929;
+  --navy-light: #1E2A45;
+  --gold: #C9A84C;
+  --gold-soft: #d8bd6e;
+  --paper: #F4F6FB;
+  --line: #d4dae8;
+  --green: #2F7A40;
+  --orange: #C8851A;
+  --red: #B23030;
+}
+
 html, body, #root {
   min-height: 100%;
-  background-color: #F7F9FF;
-  color: #1a2456;
+  background-color: var(--paper);
+  color: var(--navy);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
 body { margin: 0; }
-
 * { box-sizing: border-box; }
-
 button { font-family: inherit; }
+
+.page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px 24px 64px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--navy);
+}
+header .sub {
+  margin: 4px 0 24px;
+  color: var(--navy-light);
+  font-size: 14px;
+}
+
+nav {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.tab-btn {
+  padding: 10px 18px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  color: var(--navy-light);
+  font-weight: 400;
+  font-size: 14px;
+  margin-bottom: -1px;
+}
+.tab-btn.active {
+  border-bottom-color: var(--gold);
+  color: var(--navy);
+  font-weight: 600;
+}
+
+main { padding-top: 24px; }
+
+footer {
+  margin-top: 48px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--navy-light);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.footer-copy { color: var(--navy); font-weight: 600; }
+.footer-disclaimer { font-style: italic; margin-top: 6px; }
+
+/* LOI Prep printable view — hidden on screen, shown when printing */
+.loi-prep-section {
+  border: 2px solid var(--gold);
+  background: #fff;
+  padding: 20px;
+  margin-top: 16px;
+  border-radius: 8px;
+}
+.loi-prep-section h3 {
+  margin: 0 0 12px;
+  color: var(--navy);
+  border-bottom: 2px solid var(--gold);
+  padding-bottom: 8px;
+}
+.loi-prep-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.loi-prep-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--line);
+}
+.loi-prep-row .lp-k { color: var(--navy-light); }
+.loi-prep-row .lp-v { font-weight: 600; color: var(--navy); }
+
+@media print {
+  /* Hide everything except the LOI prep section + footer */
+  .no-print, nav, .tab-btn, header { display: none !important; }
+  body, html, #root { background: white !important; }
+  .page { max-width: 100% !important; padding: 0 !important; }
+  main { padding-top: 0 !important; }
+  /* Hide the input forms inside tabs — only print the results + LOI prep */
+  section > *:not(.results-section):not(.loi-prep-section) { display: none !important; }
+  .results-section, .loi-prep-section { page-break-inside: avoid; }
+  footer {
+    margin-top: 24px;
+    padding-top: 12px;
+    border-top: 1px solid #999;
+    font-size: 10px;
+  }
+}

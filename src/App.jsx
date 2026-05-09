@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import StorageTab from './components/StorageTab.jsx'
 import ResidentialTab from './components/ResidentialTab.jsx'
 import MhpTab from './components/MhpTab.jsx'
 import CommercialTab from './components/CommercialTab.jsx'
+import { parseSearchString } from './connectors/urlParams.js'
 
 const TABS = [
   { id: 'storage', label: 'Storage', component: StorageTab },
@@ -11,40 +12,49 @@ const TABS = [
   { id: 'commercial', label: 'Commercial', component: CommercialTab }
 ]
 
-const VERSION = '0.0.1'
+const VERSION = '0.2.0'
 const BUILD_DATE = '2026-05-08'
 
+// Read URL params once at module load — populates initial active tab + tab states.
+const initialUrlState = typeof window !== 'undefined'
+  ? parseSearchString(window.location.search)
+  : { tab: null, storage: {}, residential: {} }
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('storage')
+  const [activeTab, setActiveTab] = useState(initialUrlState.tab || 'storage')
+
+  // Keep document title in sync with the active tab — helps when operator
+  // has the page open alongside Fast Calc / Rehab Calc tabs.
+  useEffect(() => {
+    document.title = `Baby Analyzer — ${TABS.find((t) => t.id === activeTab)?.label || ''}`
+  }, [activeTab])
+
   const ActiveComponent = TABS.find(t => t.id === activeTab).component
+  const tabUrlState = activeTab === 'storage' ? initialUrlState.storage
+    : activeTab === 'residential' ? initialUrlState.residential
+    : null
+  const sharedUrlState = {
+    address: initialUrlState.address,
+    propertyName: initialUrlState.propertyName,
+    askingPrice: initialUrlState.askingPrice
+  }
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto', padding: '24px 24px 64px' }}>
-      <header>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700 }}>REI Baby Analyzer</h1>
-        <p style={{ margin: '4px 0 24px', color: '#5a6a8a', fontSize: 14 }}>
-          Operator-grade pre-LOI deal analysis · v{VERSION}
-        </p>
+    <div className="page">
+      <header className="no-print">
+        <h1>REI Baby Analyzer</h1>
+        <p className="sub">Operator-grade pre-LOI deal analysis · v{VERSION}</p>
       </header>
 
-      <nav style={{ borderBottom: '1px solid #d4dae8', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+      <nav className="no-print">
         {TABS.map(tab => {
           const isActive = activeTab === tab.id
           return (
             <button
               key={tab.id}
+              type="button"
               onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '10px 18px',
-                border: 'none',
-                borderBottom: isActive ? '2px solid #1a2456' : '2px solid transparent',
-                background: 'transparent',
-                cursor: 'pointer',
-                color: isActive ? '#1a2456' : '#5a6a8a',
-                fontWeight: isActive ? 600 : 400,
-                fontSize: 14,
-                marginBottom: -1
-              }}
+              className={isActive ? 'tab-btn active' : 'tab-btn'}
             >
               {tab.label}
             </button>
@@ -52,23 +62,15 @@ export default function App() {
         })}
       </nav>
 
-      <main style={{ paddingTop: 24 }}>
-        <ActiveComponent />
+      <main>
+        <ActiveComponent urlState={tabUrlState} sharedUrlState={sharedUrlState} />
       </main>
 
-      <footer style={{
-        marginTop: 48,
-        paddingTop: 16,
-        borderTop: '1px solid #d4dae8',
-        color: '#8a96b0',
-        fontSize: 12,
-        lineHeight: 1.6
-      }}>
-        REI Baby Analyzer v{VERSION} · build {BUILD_DATE}
-        <br />
-        Math Bible v3 (Storage · Residential · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) — both ported, drift-tolerant.
-        <br />
-        Standalone repo · zero code dependencies on any other rei-* tool.
+      <footer>
+        <div className="footer-copy">© 2026 Projects with a Purpose LLC · Licensed to Gorilla Realty</div>
+        <div>REI Baby Analyzer v{VERSION} · Released {BUILD_DATE}</div>
+        <div>Math Bible v3 (Storage · Residential · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) — both ported, drift-tolerant.</div>
+        <div className="footer-disclaimer">Estimates only. Operator assumes all underwriting and decision responsibility. Verify numbers independently before any offer or transaction.</div>
       </footer>
     </div>
   )
