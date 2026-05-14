@@ -30,11 +30,11 @@ describe('App skeleton', () => {
     expect(screen.getByRole('heading', { name: 'Residential' })).toBeInTheDocument()
   })
 
-  it('switches to Commercial and shows the brief reference', async () => {
+  it('switches to Commercial and shows the live commercial/NNN UI', async () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'Commercial' }))
-    expect(screen.getByRole('heading', { name: 'Commercial' })).toBeInTheDocument()
-    expect(screen.getByText(/Brief in repo, build deferred/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Commercial/i })).toBeInTheDocument()
+    expect(screen.getByText(/DSCR/i)).toBeInTheDocument()
   })
 })

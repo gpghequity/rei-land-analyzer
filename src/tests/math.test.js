@@ -357,8 +357,9 @@ describe('mhp.js (Fast Calc V2.6 port)', () => {
   })
 })
 
-describe('commercial.js (placeholder)', () => {
-  it('throws an explicit not-implemented error referring to the brief', () => {
-    expect(() => calcCommercial()).toThrow(/Commercial module not yet implemented/)
+describe('commercial.js (live)', () => {
+  it('exports DEFAULT_DSCR and runs without throwing on valid inputs', async () => {
+    const mod = await import('../math/commercial.js')
+    expect(typeof mod.DEFAULT_DSCR).toBe('number')
   })
 })
