@@ -3,17 +3,19 @@ import StorageTab from './components/StorageTab.jsx'
 import ResidentialTab from './components/ResidentialTab.jsx'
 import MhpTab from './components/MhpTab.jsx'
 import CommercialTab from './components/CommercialTab.jsx'
+import ExitStrategiesTab from './components/ExitStrategiesTab.jsx'
 import { parseSearchString } from './connectors/urlParams.js'
 
 const TABS = [
   { id: 'storage', label: 'Storage', component: StorageTab },
   { id: 'residential', label: 'Residential', component: ResidentialTab },
   { id: 'mhp', label: 'MHP', component: MhpTab },
-  { id: 'commercial', label: 'Commercial', component: CommercialTab }
+  { id: 'commercial', label: 'Commercial', component: CommercialTab },
+  { id: 'exit', label: 'Alt Exits', component: ExitStrategiesTab }
 ]
 
-const VERSION = '0.2.0'
-const BUILD_DATE = '2026-05-08'
+const VERSION = '0.3.0'
+const BUILD_DATE = '2026-05-17'
 
 // Read URL params once at module load — populates initial active tab + tab states.
 const initialUrlState = typeof window !== 'undefined'
@@ -33,6 +35,7 @@ export default function App() {
   const tabUrlState = activeTab === 'storage' ? initialUrlState.storage
     : activeTab === 'residential' ? initialUrlState.residential
     : null
+  // Exit strategies tab takes no url state — it manages its own form state
   const sharedUrlState = {
     address: initialUrlState.address,
     propertyName: initialUrlState.propertyName,
@@ -67,9 +70,9 @@ export default function App() {
       </main>
 
       <footer>
-        <div className="footer-copy">© 2026 Projects with a Purpose LLC · Licensed to Gorilla Realty</div>
+        <div className="footer-copy">© 2026 Projects with a Purpose LLC · Powered by REI Homepage</div>
         <div>REI Baby Analyzer v{VERSION} · Released {BUILD_DATE}</div>
-        <div>Math Bible v3 (Storage · Residential · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) — both ported, drift-tolerant.</div>
+        <div>Math Bible v3 (Storage · Residential · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) + 7 Alt Exit Strategies — drift-tolerant.</div>
         <div className="footer-disclaimer">Estimates only. Operator assumes all underwriting and decision responsibility. Verify numbers independently before any offer or transaction.</div>
       </footer>
     </div>
