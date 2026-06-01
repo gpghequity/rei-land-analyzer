@@ -2,18 +2,25 @@ import { describe, it, expect } from 'vitest'
 import { PROPERTY_TYPES, getType, deriveNOI } from '../components/analyze/typeMap.js'
 
 describe('Analyze workspace type map', () => {
-  it('exposes the 7 supported types and excludes Lending', () => {
+  it('exposes the 8 supported types (MF split into tiers) and excludes Lending', () => {
     const ids = PROPERTY_TYPES.map(t => t.id)
     expect(ids).toEqual([
-      'residential', 'self_storage', 'multifamily', 'commercial', 'mhp_rv', 'mixed_use', 'ios_land'
+      'residential', 'self_storage', 'multifamily_small', 'multifamily_large',
+      'commercial', 'mhp_rv', 'mixed_use', 'ios_land'
     ])
     expect(ids).not.toContain('lending')
+    expect(ids).not.toContain('multifamily') // replaced by the two tiers
   })
 
-  it('routes Multifamily through the existing storage/income engine (no new engine)', () => {
-    const mf = getType('multifamily')
-    const calc = mf.buildCalc({ noi: 120000 })
-    expect(calc.type).toBe('storage_group_a')
+  it('routes MF 1-19 through multifamily_small (agency 80/20 @ 7%/30yr)', () => {
+    const calc = getType('multifamily_small').buildCalc({ noi: 120000 })
+    expect(calc.type).toBe('multifamily_small')
+    expect(calc.inputs.noi).toBe(120000)
+  })
+
+  it('routes MF 20+ through multifamily_large (commercial 75/25 @ 7.25%/25yr)', () => {
+    const calc = getType('multifamily_large').buildCalc({ noi: 120000 })
+    expect(calc.type).toBe('multifamily_large')
     expect(calc.inputs.noi).toBe(120000)
   })
 
@@ -37,17 +44,21 @@ describe('Analyze workspace type map', () => {
     expect(r.buildCalc({ noi: 24000, purchase: 200000 }, 'rental').type).toBe('residential_dscr')
   })
 
-  it('IOS/Land has no engine but analyzes income when present (else intake-only)', () => {
+  it('IOS/Land NEVER borrows storage (or any) math — land uses the Land/IOS tab', () => {
     const land = getType('ios_land')
     expect(land.implemented).toBe(false)
-    expect(land.buildCalc({ noi: 0 })).toBeNull()           // raw land → intake only
-    expect(land.buildCalc({ noi: 50000 }).type).toBe('storage_group_a') // income → income engine
+    expect(land.buildCalc({ noi: 0 })).toBeNull()           // raw land → no offer
+    expect(land.buildCalc({ noi: 50000 })).toBeNull()       // even WITH income → no storage math here
   })
 
-  it('deriveNOI uses explicit NOI, else gross × (1 − expense ratio), default 40%', () => {
+  it('deriveNOI: explicit NOI > Gross−Expenses($) > Gross×(1−ratio%), default 40%', () => {
     expect(deriveNOI({ noi: 100000 })).toBe(100000)
     expect(deriveNOI({ grossIncome: 100000, expenseRatio: 30 })).toBe(70000)
     expect(deriveNOI({ grossIncome: 100000 })).toBe(60000)
     expect(deriveNOI({})).toBe(0)
+    // explicit expense dollars win over the ratio
+    expect(deriveNOI({ grossIncome: 87000, expenses: 41000 })).toBe(46000)
+    // fat-finger ratio (41000 meant as dollars) is out of range → falls back to 40%
+    expect(deriveNOI({ grossIncome: 100000, expenseRatio: 41000 })).toBe(60000)
   })
 })

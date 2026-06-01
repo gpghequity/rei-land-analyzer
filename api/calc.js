@@ -61,6 +61,32 @@ function residentialMAO(arv, rehab) {
            step2, rehab, maxOffer };
 }
 
+// Multifamily — TIERED per Math Bible v3.1 addendum (Steve-confirmed 2026-06-01).
+//   1–19 units → agency-style 80/20 LTV @ 7% / 30-yr  (= residential bank terms)
+//   20+ units  → commercial   75/25 LTV @ 7.25% / 25-yr (= storage bank terms)
+// Same CANONICAL Group-A max-purchase formula  P_max = NOI / (DSCR × LTV × K);
+// only the LTV + loan constant differ by tier. No new formula or new constant —
+// it reuses K_BANK_RESI / K_BANK_STORAGE that already exist in the Bible.
+function multifamilyTier(noi, ltv, K, tier, terms) {
+  const dsFactor    = ltv * K;
+  const maxPurchase = noi / (DSCR_CONSERVATIVE * dsFactor);
+  const rounded     = Math.floor(maxPurchase / 1000) * 1000;
+  const bankLoan    = rounded * ltv;
+  const annualDS    = bankLoan * K;
+  const actualDSCR  = annualDS > 0 ? noi / annualDS : 0;
+  return { noi, tier, terms, ltv, K, dsFactor, maxPurchase: rounded,
+           yourOffer: rounded - WHOLESALE_FEE, bankLoan, annualDS, actualDSCR,
+           dscrPass: actualDSCR >= DSCR_CONSERVATIVE, dscrTarget: DSCR_CONSERVATIVE };
+}
+function multifamilySmall(noi) {
+  return multifamilyTier(noi, LTV_RESI, K_BANK_RESI, '1-19 units',
+    '80/20 LTV · 7% / 30-yr agency-style debt');
+}
+function multifamilyLarge(noi) {
+  return multifamilyTier(noi, LTV_STORAGE, K_BANK_STORAGE, '20+ units',
+    '75/25 LTV · 7.25% / 25-yr commercial debt');
+}
+
 // Residential DSCR check (for rental/hold)
 function residentialDSCR(annualNOI, purchase) {
   const loan     = purchase * LTV_RESI;
@@ -146,6 +172,16 @@ export default function handler(req, res) {
     if (type === 'storage_group_a') {
       const noi = Number(inputs.noi ?? 0);
       return res.json({ ok: true, type, result: storageGroupA(noi) });
+    }
+
+    if (type === 'multifamily_small') {
+      const noi = Number(inputs.noi ?? 0);
+      return res.json({ ok: true, type, result: multifamilySmall(noi) });
+    }
+
+    if (type === 'multifamily_large') {
+      const noi = Number(inputs.noi ?? 0);
+      return res.json({ ok: true, type, result: multifamilyLarge(noi) });
     }
 
     if (type === 'residential_mao') {

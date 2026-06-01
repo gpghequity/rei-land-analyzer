@@ -26,27 +26,38 @@ import { remainingPrincipal } from '../../math/sunsetTest.js'
 const BUYER_CASH = 100000
 const SELLER_BALLOON_YEARS = 15 // per spec for the $100k + seller structure
 
-export const INCOME_ASSET_TYPES = ['self_storage', 'multifamily', 'commercial', 'mhp_rv', 'mixed_use']
+// Income assets that use the storage/commercial income-property scenario framework
+// (the 8-row financing matrix). Per the Math Bible routing rules:
+//   self_storage      → storage terms          (75/25 @ 7.25% / 25-yr)
+//   multifamily_large → storage/commercial     (75/25 @ 7.25% / 25-yr) — 20+ units
+//   commercial        → commercial terms       (75/25 @ 7%    / 30-yr)
+//   mixed_use         → commercial terms       (blended NOI; full split on the Mixed Use tab)
+//   mhp_rv            → storage/commercial      (75/25 @ 7.25% / 25-yr; full engine on the MHP tab)
+// EXCLUDED (do NOT use this matrix):
+//   residential, multifamily_small (1-19) → residential / agency-style math (80/20 @ 7% / 30-yr)
+//   ios_land → land supported-intake (no offer engine)
+export const INCOME_ASSET_TYPES = ['self_storage', 'multifamily_large', 'commercial', 'mhp_rv', 'mixed_use']
 
 export function isIncomeAsset(typeId) {
   return INCOME_ASSET_TYPES.includes(typeId)
 }
 
-// Per-class bank terms. LTV = 0.70 across the board per the storage rule
-// (bank funds 70%, equity 30%); rate/amort taken from each class's engine.
-// Documented assumptions — surfaced in the report + questions file.
+// Per-class bank terms — LTV is asset-correct per the Math Bible (NOT a blanket
+// 0.70). Storage/MF-20+/MHP carry 75/25 @ 7.25%/25yr; commercial carries its own
+// engine terms (75/25 @ 7%/30yr). These match the dedicated tabs' engines so the
+// Analyze-a-Deal headline reconciles with the Bible (no asset borrows another's math).
 export function bankTermsFor(typeId, C) {
   switch (typeId) {
     case 'self_storage':
-    case 'multifamily':
-      return { ltv: 0.70, K: C.K_BANK_STORAGE, rateLabel: '7.25% / 25-yr (Math Bible storage bank terms)' }
+    case 'multifamily_large':
+      return { ltv: C.LTV_STORAGE, K: C.K_BANK_STORAGE, rateLabel: '75/25 LTV · 7.25% / 25-yr (Math Bible storage / commercial income-property terms)' }
+    case 'mhp_rv':
+      return { ltv: C.LTV_STORAGE, K: C.K_BANK_STORAGE, rateLabel: '75/25 LTV · 7.25% / 25-yr (storage/commercial income terms — use the MHP tab for full lot/POH analysis)' }
     case 'commercial':
     case 'mixed_use':
-      return { ltv: 0.70, K: annualLoanConstant(0.07, 30), rateLabel: '7% / 30-yr (Math Bible commercial lender defaults)' }
-    case 'mhp_rv':
-      return { ltv: 0.70, K: annualLoanConstant(0.07, 30), rateLabel: '7% / 30-yr (MHP/RV bank terms)' }
+      return { ltv: 0.75, K: annualLoanConstant(0.07, 30), rateLabel: '75/25 LTV · 7% / 30-yr (Math Bible commercial income-property terms)' }
     default:
-      return { ltv: 0.70, K: C.K_BANK_STORAGE, rateLabel: '7.25% / 25-yr' }
+      return { ltv: C.LTV_STORAGE, K: C.K_BANK_STORAGE, rateLabel: '75/25 LTV · 7.25% / 25-yr' }
   }
 }
 
@@ -132,21 +143,33 @@ export function buildIncomeMatrix({ assetType, noi }) {
 
   const bankOnly125 = rows.find(r => r.structureKey === 'bank_only' && r.dscr === C.DSCR_CONSERVATIVE)
   const bankOnly115 = rows.find(r => r.structureKey === 'bank_only' && r.dscr === C.DSCR_STRETCH)
-  const sellerRows = rows.filter(r => r.structureKey === 'seller_fi')
-  const bestSeller = sellerRows.reduce((a, b) => (b.offer > a.offer ? b : a), sellerRows[0])
+
+  // SELLER-FINANCED MAXIMUM (Math Bible Group B): when the financed portion
+  // carries the 5% seller rate instead of the bank rate, the same NOI/DSCR
+  // supports a HIGHER price (cheaper debt). This is the bible's groupB formula
+  // (maxPurchase = noi / (dscr × LTV × K_SELLER)) — the seller's incentive to
+  // carry paper is this higher price. Exposed so seller finance is tested both
+  // ways: (A) same offer / lower cash (the 8 rows above) and (B) higher offer.
+  const groupB = (dscr) => round1000(noi / (dscr * terms.ltv * C.K_SELLER))
+  const sellerFinanced = {
+    conservative: groupB(C.DSCR_CONSERVATIVE),
+    aggressive: groupB(C.DSCR_STRETCH),
+    note: 'Group B — financed portion at the 5% seller rate; higher supported price than bank-rate debt.'
+  }
 
   const pockets = rows.map(r => r.pocketMoney)
-  const offers = rows.map(r => r.offer)
+  const offers = rows.map(r => r.offer).concat([sellerFinanced.conservative, sellerFinanced.aggressive])
 
   const summary = {
     noi,
     assetType,
-    conservativeValue: bankOnly125.offer,   // 1.25 bank-only
-    aggressiveValue: bankOnly115.offer,      // 1.15 bank-only
-    bestSellerFinanceValue: bestSeller.offer,
+    conservativeValue: bankOnly125.offer,        // 1.25 bank-only
+    aggressiveValue: bankOnly115.offer,           // 1.15 bank-only
+    bestSellerFinanceValue: sellerFinanced.aggressive, // Group B @1.15 — highest supportable via cheaper seller debt
+    sellerFinanced,
     pocketRange: [Math.min(...pockets), Math.max(...pockets)],
     offerRange: [Math.min(...offers), Math.max(...offers)],
-    recommendedOfferRange: [bankOnly125.offer, bankOnly115.offer]
+    recommendedOfferRange: [bankOnly125.offer, sellerFinanced.aggressive]
   }
 
   const recommendation = buildRecommendation(rows, summary, C)
@@ -159,48 +182,43 @@ export function buildIncomeMatrix({ assetType, noi }) {
     sellerNote: `5% / ${C.AMORT_SELLER}-yr, balloon at year ${SELLER_BALLOON_YEARS}`,
     buyerCashInSellerStructure: BUYER_CASH,
     pocketFloor: C.POCKET_FLOOR,
-    note: 'Bank funds its LTV share; equity cost and seller financing apply ONLY to the equity gap, never the full price. Non-storage LTVs are documented defaults pending operator confirmation.'
+    note: 'Bank funds its LTV share; equity cost and seller financing apply ONLY to the equity gap, never the full price. Per-asset LTV is Math-Bible-correct (storage/MF-20+ 75/25; commercial 75/25).'
   }
 
   return { rows, summary, recommendation, assumptions, bankTerms: terms }
 }
 
-// Practical recommendation — not just the highest offer. If structures cluster
-// within 5%, prefer the simplest (bank-only) and say why.
+// Practical recommendation — not just the highest offer. Compares bank-only vs
+// the Group B seller-financed price; if within 5%, prefers the simplest (bank-only).
 function buildRecommendation(rows, summary, C) {
   const notes = []
   const bankOnly125 = rows.find(r => r.structureKey === 'bank_only' && r.dscr === 1.25)
   const bankOnly115 = rows.find(r => r.structureKey === 'bank_only' && r.dscr === 1.15)
-  const seller125 = rows.find(r => r.structureKey === 'seller_fi' && r.dscr === 1.25)
   const amort125 = rows.find(r => r.structureKey === 'equity_amort' && r.dscr === 1.25)
+  const sellerB = summary.sellerFinanced.conservative   // Group B @1.25
+  const sellerDelta = sellerB - bankOnly125.offer       // how much cheaper seller debt raises the price
 
-  // Seller-finance vs bank-only at the conservative lens (same DSCR-sized offer).
-  const sellerDelta = seller125.offer - bankOnly125.offer
-  if (Math.abs(sellerDelta) <= bankOnly125.offer * 0.05) {
-    notes.push(`Seller financing changes the supported offer by only ${fmtSigned(sellerDelta)} vs bank-only at 1.25 DSCR — within 5%. Its real benefit here is lower cash in the deal ($${BUYER_CASH.toLocaleString()} vs $${bankOnly125.borrower.toLocaleString()}), not a higher price.`)
-  } else if (sellerDelta > 0) {
-    notes.push(`Seller financing raises the supported offer by ${fmtSigned(sellerDelta)} — materially better; worth the added complexity.`)
+  if (sellerDelta > bankOnly125.offer * 0.05) {
+    notes.push(`Seller financing (5%) supports a materially higher price at 1.25 DSCR — about ${fmtSigned(sellerDelta)} over bank-only ($${sellerB.toLocaleString()} vs $${bankOnly125.offer.toLocaleString()}). Worth pursuing if the seller will carry paper; the higher price is the seller's incentive.`)
+  } else {
+    notes.push(`Seller financing raises the supported price by only ${fmtSigned(sellerDelta)} at 1.25 DSCR (within 5%) — keep it simple with bank-only unless the seller needs the price bump or you want to reduce cash in.`)
   }
 
-  // Amortized equity destroying pocket money.
+  // Equity-cost caution (the financed-with-your-own-money case).
   if (amort125.pocketMoney < C.POCKET_FLOOR) {
-    notes.push(`Amortizing the equity at 8%/25-yr drops pocket money to $${Math.round(amort125.pocketMoney).toLocaleString()} (below the $${C.POCKET_FLOOR.toLocaleString()} floor) — interest-only or seller financing preserves cash flow.`)
+    notes.push(`Funding the equity with amortized 8% capital drops pocket money to $${Math.round(amort125.pocketMoney).toLocaleString()} (below the $${C.POCKET_FLOOR.toLocaleString()} floor) — interest-only equity or seller financing preserves cash flow.`)
   }
 
   // Aggressive lens caution.
   if (bankOnly115.pocketMoney < C.POCKET_FLOOR) {
-    notes.push(`At 1.15 DSCR the deal clears a higher offer ($${bankOnly115.offer.toLocaleString()}) but pocket money falls to $${Math.round(bankOnly115.pocketMoney).toLocaleString()} — aggressive; little margin for vacancy/expense surprises.`)
+    notes.push(`At 1.15 DSCR the deal clears a higher bank offer ($${bankOnly115.offer.toLocaleString()}) but pocket money falls to $${Math.round(bankOnly115.pocketMoney).toLocaleString()} — aggressive; little margin for vacancy/expense surprises.`)
   } else {
-    notes.push(`1.15 DSCR supports up to $${bankOnly115.offer.toLocaleString()} with $${Math.round(bankOnly115.pocketMoney).toLocaleString()} pocket money — usable but tighter than the 1.25 conservative case.`)
+    notes.push(`1.15 DSCR supports up to $${bankOnly115.offer.toLocaleString()} bank-only with $${Math.round(bankOnly115.pocketMoney).toLocaleString()} pocket — usable but tighter than the 1.25 case.`)
   }
 
-  // Headline pick.
-  let headline
-  if (Math.abs(sellerDelta) <= bankOnly125.offer * 0.05) {
-    headline = `Recommended: Bank-Only at 1.25 DSCR ($${bankOnly125.offer.toLocaleString()}). The financing add-ons don't raise the offer enough to justify the complexity — use them only to reduce cash in the deal.`
-  } else {
-    headline = `Recommended: the best-value structure (${summary.bestSellerFinanceValue.toLocaleString()}) — see notes.`
-  }
+  const headline = sellerDelta > bankOnly125.offer * 0.05
+    ? `Recommended: pursue seller financing — it supports up to $${sellerB.toLocaleString()} at 1.25 DSCR (Group B), vs $${bankOnly125.offer.toLocaleString()} bank-only. Conservative bank-only floor is $${bankOnly125.offer.toLocaleString()}.`
+    : `Recommended: Bank-Only at 1.25 DSCR ($${bankOnly125.offer.toLocaleString()}). Seller financing doesn't raise the price enough to justify the complexity — use it only to reduce cash in.`
 
   return { headline, notes }
 }

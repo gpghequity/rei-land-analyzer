@@ -6,6 +6,7 @@ import ResidentialTab from './components/ResidentialTab.jsx'
 import MhpTab from './components/MhpTab.jsx'
 import CommercialTab from './components/CommercialTab.jsx'
 import MixedUseTab from './components/MixedUseTab.jsx'
+import LandTab from './components/LandTab.jsx'
 import { parseSearchString } from './connectors/urlParams.js'
 
 const TABS = [
@@ -15,10 +16,11 @@ const TABS = [
   { id: 'residential', label: 'Residential', component: ResidentialTab },
   { id: 'mhp', label: 'MHP', component: MhpTab },
   { id: 'commercial', label: 'Commercial', component: CommercialTab },
-  { id: 'mixeduse', label: 'Mixed Use', component: MixedUseTab }
+  { id: 'mixeduse', label: 'Mixed Use', component: MixedUseTab },
+  { id: 'land', label: 'Land / IOS', component: LandTab }
 ]
 
-const VERSION = '0.5.0'
+const VERSION = '0.6.0'
 const BUILD_DATE = '2026-06-01'
 
 // Read URL params once at module load — populates initial active tab + tab states.
@@ -39,6 +41,7 @@ export default function App() {
   const tabUrlState = activeTab === 'storage' ? initialUrlState.storage
     : activeTab === 'residential' ? initialUrlState.residential
     : null
+  // Land tab takes only shared deal info (address / asking) — no tab-specific URL schema.
   // Exit strategies tab takes no url state — it manages its own form state
   const sharedUrlState = {
     address: initialUrlState.address,
@@ -76,7 +79,7 @@ export default function App() {
       <footer>
         <div className="footer-copy">© 2026 Projects with a Purpose LLC · Powered by REI Homepage</div>
         <div>REI Baby Analyzer v{VERSION} · Released {BUILD_DATE}</div>
-        <div>Math Bible v3 (Storage · Residential · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) + 7 Alt Exit Strategies — drift-tolerant.</div>
+        <div>Math Bible v3.1 (Storage · Residential · MF 1–19 / 20+ tiers · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) + 7 Alt Exit Strategies + Land/IOS intake — drift-tolerant.</div>
         <div className="footer-disclaimer">Estimates only. Operator assumes all underwriting and decision responsibility. Verify numbers independently before any offer or transaction.</div>
       </footer>
     </div>

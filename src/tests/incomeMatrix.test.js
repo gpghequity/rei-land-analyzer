@@ -70,8 +70,9 @@ describe('Income financing matrix (standard report for all NOI assets)', () => {
         expect(summary.aggressiveValue).toBeGreaterThan(summary.conservativeValue)
       })
 
-      it('documents the bank LTV assumption (0.70)', () => {
-        expect(assumptions.bankLtv).toBe(0.70)
+      it('documents the asset-correct bank LTV (0.75 — never 0.70)', () => {
+        expect(assumptions.bankLtv).toBe(terms.ltv)
+        expect(assumptions.bankLtv).toBe(0.75) // storage / MF-20+ / commercial all 75/25 here
       })
     })
   }

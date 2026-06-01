@@ -82,7 +82,7 @@ function headline(calcType, result) {
   if (calcType === 'residential_dscr') {
     return { noiUsed: result.annualNOI, estValue: result.purchase, maxOffer: null, dscr: result.dscr, dscrPass: result.pass, pocket: result.pocketCashAnnual }
   }
-  if (calcType === 'storage_group_a') {
+  if (calcType === 'storage_group_a' || calcType === 'multifamily_small' || calcType === 'multifamily_large') {
     return { noiUsed: result.noi, estValue: result.maxPurchase, maxOffer: result.yourOffer, dscr: result.actualDSCR, dscrPass: result.dscrPass }
   }
   if (calcType === 'commercial_dscr') {
@@ -93,17 +93,24 @@ function headline(calcType, result) {
 }
 
 // Transparent recommendation rule (presentation layer — not bible math).
-function recommend({ asking, maxOffer, estValue, dscrPass, implemented, hasMath }) {
-  if (!implemented || !hasMath) {
-    return { verdict: 'INTAKE ONLY', basis: 'Analysis module not yet implemented for this property type — data captured and saved.' }
+function recommend({ asking, maxOffer, estValue, dscrPass, typeImplemented, hasMath, isIncome }) {
+  // Distinguish "no engine for this type" from "engine exists but we lack inputs".
+  if (!typeImplemented) {
+    return { verdict: 'INTAKE ONLY', basis: 'No analysis engine exists for this property type yet — data captured and saved.' }
+  }
+  if (!hasMath) {
+    return isIncome
+      ? { verdict: 'NEEDS INCOME', basis: 'This asset type IS supported — it just needs income. Enter NOI (or Gross Income + expense ratio) above, or upload an OM / T-12 / rent roll that states them, then re-run. Data captured and saved.' }
+      : { verdict: 'REVIEW', basis: 'Not enough inputs to compute an offer; review captured data and add the missing fields.' }
   }
   const ask = num(asking)
   const offer = num(maxOffer) || num(estValue)
   if (!offer) return { verdict: 'REVIEW', basis: 'Not enough inputs to compute an offer; review captured data.' }
   if (!ask) return { verdict: 'REVIEW', basis: `Computed offer ${money(offer)}; enter seller asking to compare.` }
-  if (ask <= offer) return { verdict: 'PURSUE', basis: `Asking ${money(ask)} is at/below the max recommended offer ${money(offer)}.` }
-  if (ask <= offer * 1.1) return { verdict: 'NEGOTIATE', basis: `Asking ${money(ask)} is within 10% of max offer ${money(offer)} — negotiable.` }
-  return { verdict: 'PASS', basis: `Asking ${money(ask)} exceeds max offer ${money(offer)} by more than 10%.${dscrPass === false ? ' DSCR below target.' : ''}` }
+  // Thresholds: at/below offer = PURSUE (more spread the lower it is); up to 25% over = NEGOTIATE; beyond = WARNING.
+  if (ask <= offer) return { verdict: 'PURSUE', basis: `Asking ${money(ask)} is at/below the max recommended offer ${money(offer)} — the lower the ask, the more spread.` }
+  if (ask <= offer * 1.25) return { verdict: 'NEGOTIATE', basis: `Asking ${money(ask)} is up to 25% over the max offer ${money(offer)} — negotiable.` }
+  return { verdict: 'WARNING', basis: `Asking ${money(ask)} is more than 25% over the max offer ${money(offer)}.${dscrPass === false ? ' DSCR below target.' : ''}` }
 }
 
 const card = { background: '#fff', border: '1px solid #d4dae8', borderRadius: 8, padding: '14px 16px', marginBottom: 12 }
@@ -190,7 +197,7 @@ function FinancingMatrix({ rows }) {
           </tbody>
         </table>
       </div>
-      <p style={srcStyle}>Bank funds 70% (DSCR-sized); equity cost & seller financing apply only to the equity gap, never the full price. All figures from the Math Bible engine.</p>
+      <p style={srcStyle}>Bank funds its asset-correct LTV share (storage / MF 20+ = 75%; commercial = 75%), DSCR-sized; equity cost & seller financing apply only to the equity gap, never the full price. All figures from the Math Bible engine.</p>
     </div>
   )
 }
@@ -287,20 +294,38 @@ export default function AnalyzeDealTab() {
       // ── Income/NOI assets → standardized Financing Matrix (Math Bible engine) ──
       if (isIncomeAsset(typeId)) {
         const grossN = num(calcFields.grossIncome)
+        const expDollars = num(calcFields.expenses)
         let matrixNOI = num(calcFields.noi)
         if (matrixNOI > 0) {
           noiBasis = num(fields.noi) ? 'User-entered NOI' : 'Broker/OM NOI (no override)'
         } else if (grossN > 0) {
-          if (typeId === 'self_storage') {
-            const sn = storageNOI(grossN, num(calcFields.expenseRatio) / 100 || 0)
+          // Expense ratio is a whole percent (41 → 0.41). An out-of-range value
+          // (e.g. 41000, dollars typed into the % field) is treated as unset so a
+          // typo can never drive NOI negative and break the matrix.
+          let er = (calcFields.expenseRatio !== '' && calcFields.expenseRatio != null) ? num(calcFields.expenseRatio) / 100 : null
+          if (er != null && (er < 0 || er > 1)) er = null
+          if (expDollars > 0) {
+            // Operator entered actual expense DOLLARS — the intuitive path.
+            if (typeId === 'self_storage') {
+              const sn = storageNOI(grossN, Math.min(0.95, expDollars / grossN))
+              matrixNOI = sn.noi
+              noiBasis = sn.floorBinds
+                ? `Gross $${grossN.toLocaleString()} − expenses (35% storage floor binds)`
+                : `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
+            } else {
+              matrixNOI = Math.max(0, Math.round(grossN - expDollars))
+              noiBasis = `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
+            }
+          } else if (typeId === 'self_storage') {
+            const sn = storageNOI(grossN, er || 0)
             matrixNOI = sn.noi
             noiBasis = sn.floorBinds
               ? `Gross $${grossN.toLocaleString()} × (1 − 35% storage expense floor)`
               : `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(sn.expenseRatio * 100)}% expense ratio)`
           } else {
-            const er = (calcFields.expenseRatio !== '' && calcFields.expenseRatio != null) ? num(calcFields.expenseRatio) / 100 : 0.40
-            matrixNOI = Math.round(grossN * (1 - er))
-            noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(er * 100)}% expense ratio)`
+            const erUsed = er != null ? er : 0.40
+            matrixNOI = Math.round(grossN * (1 - erUsed))
+            noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(erUsed * 100)}% expense ratio)`
           }
         }
         if (matrixNOI > 0) {
@@ -335,7 +360,8 @@ export default function AnalyzeDealTab() {
       // 3) Recommendation (transparent rule).
       const rec = recommend({
         asking: calcFields.askingPrice, maxOffer: head.maxOffer, estValue: head.estValue,
-        dscrPass: head.dscrPass, implemented: type.implemented, hasMath
+        dscrPass: head.dscrPass, typeImplemented: type.implemented, hasMath,
+        isIncome: isIncomeAsset(typeId)
       })
 
       // 4) Broker vs calculated NOI.
@@ -353,7 +379,7 @@ export default function AnalyzeDealTab() {
       activeFields.forEach(f => {
         if (f.key === 'askingPrice') return
         // NOI / gross / expense are satisfied once an NOI is derivable.
-        if (['noi', 'grossIncome', 'expenseRatio'].includes(f.key) && noiSatisfied) return
+        if (['noi', 'grossIncome', 'expenses', 'expenseRatio'].includes(f.key) && noiSatisfied) return
         if (!fields[f.key] && !calcFields[f.key]) missing.push(f.label)
       })
       if (!docs.length) missing.push('Financial documents (OM / T12 / rent roll)')
@@ -494,7 +520,7 @@ function Results({ r }) {
   const ex = r.extracted
   const comps = r.comps
   const ph = r.photoRes
-  const vColor = { PURSUE: '#2F7A40', NEGOTIATE: '#C8851A', PASS: '#B23030', 'INTAKE ONLY': '#6b7280', REVIEW: '#1E2A45' }[r.recommendation.verdict] || '#1E2A45'
+  const vColor = { PURSUE: '#2F7A40', NEGOTIATE: '#C8851A', WARNING: '#B23030', PASS: '#2F7A40', 'INTAKE ONLY': '#6b7280', 'NEEDS INCOME': '#C8851A', REVIEW: '#1E2A45' }[r.recommendation.verdict] || '#1E2A45'
 
   return (
     <div>
@@ -546,7 +572,9 @@ function Results({ r }) {
       {!r.matrix && (
       <div style={card}>
         <h3 style={h3}>Baby Analyzer Calculations <span style={srcStyle}>(bible math — engine: {r.calcTypeUsed || 'none'})</span></h3>
-        {!r.calc && <p style={{ color: '#C8851A', fontWeight: 600 }}>ANALYSIS MODULE NOT YET IMPLEMENTED / insufficient inputs — data captured and saved.</p>}
+        {!r.calc && (r.isIncome
+          ? <p style={{ color: '#C8851A', fontWeight: 600 }}>No NOI yet — this asset type IS supported. Enter NOI, or Gross Income + Annual Expenses (or an expense ratio %), or upload an OM / T-12 that states them, then re-run. Raw data captured and saved.</p>
+          : <p style={{ color: '#C8851A', fontWeight: 600 }}>Insufficient inputs to compute — data captured and saved.</p>)}
         {r.calc && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
