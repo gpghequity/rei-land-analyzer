@@ -6,13 +6,13 @@
 const STORAGE_EXPENSE_FLOOR = 0.35;
 const LTV_STORAGE           = 0.75;
 const LTV_RESI              = 0.80;
-const LTV_COMMERCIAL        = 0.65;
+const LTV_COMMERCIAL        = 0.75;  // Same as storage (Math Bible v3)
 const RATE_BANK_STORAGE     = 0.0725;
 const AMORT_BANK_STORAGE    = 25;
 const RATE_BANK_RESI        = 0.0700;
 const AMORT_BANK_RESI       = 30;
-const RATE_BANK_COMMERCIAL  = 0.07;
-const AMORT_BANK_COMMERCIAL = 30;
+const RATE_BANK_COMMERCIAL  = 0.0725;  // Same as storage (Math Bible v3)
+const AMORT_BANK_COMMERCIAL = 25;     // Same as storage (Math Bible v3)
 const DSCR_CONSERVATIVE     = 1.25;
 const DSCR_STRETCH          = 1.10;
 const MAO_FACTOR            = 0.70;
@@ -41,33 +41,81 @@ function storageNOI(grossDollarsIn, sellerStatedExpensePct) {
 
 // Storage Group A max purchase (bank financing, conservative DSCR)
 function storageGroupA(noi) {
-  const annualBankFactor = LTV_STORAGE * K_BANK_STORAGE;
-  const maxPurchase      = noi / (DSCR_CONSERVATIVE * annualBankFactor);
+  const dsFactor         = LTV_STORAGE * K_BANK_STORAGE;
+  const maxPurchase      = noi / (DSCR_CONSERVATIVE * dsFactor);
   const rounded          = Math.floor(maxPurchase / 1000) * 1000;
   const bankLoan         = rounded * LTV_STORAGE;
   const annualDS         = bankLoan * K_BANK_STORAGE;
   const actualDSCR       = noi / annualDS;
-  return { noi, maxPurchase: rounded, yourOffer: rounded - WHOLESALE_FEE,
-           annualDS, actualDSCR, dscrPass: actualDSCR >= DSCR_CONSERVATIVE };
+  return { noi, K: K_BANK_STORAGE, dsFactor, maxPurchase: rounded,
+           yourOffer: rounded - WHOLESALE_FEE, bankLoan, annualDS, actualDSCR,
+           dscrPass: actualDSCR >= DSCR_CONSERVATIVE, dscrTarget: DSCR_CONSERVATIVE };
 }
 
-// Residential MAO
+// Residential MAO (Maximum Allowable Offer for flips)
 function residentialMAO(arv, rehab) {
-  const endBuyer  = (arv * MAO_FACTOR) - rehab;
-  const yourOffer = endBuyer - WHOLESALE_FEE;
-  return { arv, rehab, endBuyer, yourOffer };
+  const step1     = arv * MAO_FACTOR;
+  const step2     = step1 - WHOLESALE_FEE;
+  const maxOffer  = step2 - rehab;
+  return { arv, maoFactor: MAO_FACTOR, step1, wholesaleFee: WHOLESALE_FEE,
+           step2, rehab, maxOffer };
 }
 
-// Residential DSCR check
+// Residential DSCR check (for rental/hold)
 function residentialDSCR(annualNOI, purchase) {
   const loan     = purchase * LTV_RESI;
+  const dsFactor = LTV_RESI * K_BANK_RESI;
   const annualDS = loan * K_BANK_RESI;
   const dscr     = annualNOI / annualDS;
   const pass     = dscr >= DSCR_CONSERVATIVE;
   const pocket   = annualNOI - annualDS;
-  return { loan, annualDS, dscr, pass,
-           pocketCashAnnual: pocket,
-           pocketFloorBinds: pocket < POCKET_FLOOR };
+  return { annualNOI, purchase, loan, K: K_BANK_RESI, dsFactor,
+           annualDS, dscr, pass, pocketCashAnnual: pocket,
+           pocketCashMonthly: pocket / 12, pocketFloorBinds: pocket < POCKET_FLOOR,
+           dscrTarget: DSCR_CONSERVATIVE };
+}
+
+// Commercial with dual DSCR scenarios (1.25 conservative, 1.15 stretch/ramp)
+function commercialDSCR(noi) {
+  const dsFactor = LTV_COMMERCIAL * K_BANK_COMMERCIAL;
+
+  // Conservative scenario (1.25x DSCR)
+  const maxPurchaseConservative = noi / (DSCR_CONSERVATIVE * dsFactor);
+  const roundedConservative = Math.floor(maxPurchaseConservative / 1000) * 1000;
+  const loanConservative = roundedConservative * LTV_COMMERCIAL;
+  const annualDSConservative = loanConservative * K_BANK_COMMERCIAL;
+  const dscrConservative = noi / annualDSConservative;
+
+  // Stretch/Ramp scenario (1.15x DSCR)
+  const maxPurchaseStretch = noi / (DSCR_STRETCH * dsFactor);
+  const roundedStretch = Math.floor(maxPurchaseStretch / 1000) * 1000;
+  const loanStretch = roundedStretch * LTV_COMMERCIAL;
+  const annualDSStretch = loanStretch * K_BANK_COMMERCIAL;
+  const dscrStretch = noi / annualDSStretch;
+
+  return {
+    noi, K: K_BANK_COMMERCIAL, dsFactor,
+    conservative: {
+      label: 'Conservative (1.25x DSCR)',
+      dscr: dscrConservative,
+      dscr_target: DSCR_CONSERVATIVE,
+      pass: dscrConservative >= DSCR_CONSERVATIVE,
+      maxPurchase: roundedConservative,
+      loan: loanConservative,
+      annualDS: annualDSConservative,
+      yourOffer: roundedConservative - WHOLESALE_FEE
+    },
+    stretch: {
+      label: 'Stretch / Ramp (1.15x DSCR)',
+      dscr: dscrStretch,
+      dscr_target: DSCR_STRETCH,
+      pass: dscrStretch >= DSCR_STRETCH,
+      maxPurchase: roundedStretch,
+      loan: loanStretch,
+      annualDS: annualDSStretch,
+      yourOffer: roundedStretch - WHOLESALE_FEE
+    }
+  };
 }
 
 // MHP NOI
@@ -77,8 +125,8 @@ function mhpNOI(lots, lotRent, pohUnits, pohRent, expenseRatio) {
   const gross     = lotIncome + pohIncome;
   const expenses  = gross * expenseRatio;
   const noi       = gross - expenses;
-  return { lotIncome, pohIncome, gross, expenses, noi,
-           capRate: (purchasePrice) => noi / purchasePrice };
+  const capRate   = (purchasePrice) => purchasePrice > 0 ? noi / purchasePrice : 0;
+  return { lotIncome, pohIncome, gross, expenses, noi, expenseRatio, capRate };
 }
 
 // ── Handler ──
@@ -110,6 +158,11 @@ export default function handler(req, res) {
       const noi      = Number(inputs.annualNOI ?? 0);
       const purchase = Number(inputs.purchase  ?? 0);
       return res.json({ ok: true, type, result: residentialDSCR(noi, purchase) });
+    }
+
+    if (type === 'commercial_dscr') {
+      const noi = Number(inputs.annualNOI ?? 0);
+      return res.json({ ok: true, type, result: commercialDSCR(noi) });
     }
 
     if (type === 'mhp_noi') {
