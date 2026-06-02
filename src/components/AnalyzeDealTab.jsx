@@ -296,13 +296,11 @@ function DetailCards({ rows, assumptions }) {
   )
 }
 
-// Each property type that has a DEEPER dedicated underwriter maps here. These were
-// formerly separate top tabs; they now mount INLINE as this type's "Full Analysis"
-// mode. Same Math Bible engines (src/math/*) — nothing was deleted or weakened, the
-// strongest math is just reached from the one dropdown. `extras` documents what the
-// deep underwriter adds beyond the FastCalc headline. Types without a deep component
-// (multifamily 1–19 / 20+) already get their strongest output from the FastCalc
-// income/headline engines, so they have no separate Full mode.
+// Each property type with an OPTIONAL deeper manual underwriter maps here. The
+// guided analyzer is always the main screen; these mount in a collapsed
+// "Advanced — manual scenario underwriting" section below the result (you hand-
+// enter every financing scenario yourself). Land has no guided offer engine, so
+// for land this component IS the main screen. Same Math Bible engines (src/math/*).
 const DEEP_COMPONENT = {
   self_storage: { Comp: StorageTab,    label: 'Self Storage',  extras: 'Group A/B/C scenarios, ramp & sunset tests, 5-yr kicker, equity/cash-to-close detail' },
   residential:  { Comp: ResidentialTab, label: 'Residential',  extras: '3-card pad stack, Owner Hard Mode, comps-based ARV percentile, alt exit strategies' },
@@ -312,44 +310,24 @@ const DEEP_COMPONENT = {
   ios_land:     { Comp: LandTab,        label: 'Land / IOS',    extras: '40-field intake, zoning review, 10-risk matrix, unit-price metrics, LOI terms' }
 }
 
-// Is the deep underwriter the active view? (deep exists AND either land forces it
-// or the operator opted in). Single source of truth shared by render + status line.
-function isDeepActive(typeId, analysisMode) {
-  const deep = DEEP_COMPONENT[typeId]
-  return Boolean(deep) && (typeId === 'ios_land' || analysisMode === 'deep')
-}
-
-// Human-readable engine route for the status line (item 14). Confidence/debug
-// only — it never changes any math; it just names which Bible engine is running.
-function engineRoute(typeId, analysisMode) {
-  const deep = DEEP_COMPONENT[typeId]
-  if (isDeepActive(typeId, analysisMode)) {
-    const eng = {
-      self_storage: 'storage.js (Group A/B/C · sunset · ramp · kicker)',
-      residential: 'residential.js + scenarioEngine.js',
-      mhp_rv: 'mhp.js',
-      commercial: 'commercial.js',
-      mixed_use: 'mixedUse.js',
-      ios_land: 'land.js (supported-intake — no offer engine)'
-    }[typeId]
-    return `${deep.label} · Deep underwriter → ${eng}`
-  }
-  if (isIncomeAsset(typeId)) return `${getType(typeId)?.label || typeId} · Full Analysis → income financing matrix (incomeMatrix.js) + docs/photos/comps`
-  if (typeId === 'residential') return 'Residential · Full Analysis → /api/calc residential_mao / residential_dscr + docs/photos/comps'
-  if (typeId === 'multifamily_small') return 'Multifamily 1–19 · /api/calc multifamily_small (agency 80/20 · 7%/30yr)'
+// Human-readable engine route for the status line. Confidence/debug only — it
+// never changes any math; it just names which Bible engine is running.
+function engineRoute(typeId) {
+  if (typeId === 'ios_land') return 'Land / IOS · land.js supported-intake (no offer engine)'
+  if (isIncomeAsset(typeId)) return `${getType(typeId)?.label || typeId} · income financing matrix (incomeMatrix.js) + docs/photos/comps`
+  if (typeId === 'residential') return 'Residential · /api/calc residential_mao / residential_dscr + docs/photos/comps'
+  if (typeId === 'multifamily_small') return 'Multifamily 5–19 · /api/calc multifamily_small (agency 80/20 · 7%/30yr)'
   if (typeId === 'multifamily_large') return 'Multifamily 20+ · income financing matrix (75/25 · 7.25%/25yr)'
   return getType(typeId)?.label || typeId
 }
 
 // Always-visible status line — tells the operator exactly which engine is running.
-function StatusLine({ typeId, analysisMode }) {
+function StatusLine({ typeId }) {
   const t = getType(typeId)
-  const modeLabel = isDeepActive(typeId, analysisMode) ? 'Deep underwriter' : 'Full Analysis'
   return (
     <div className="no-print" style={{ marginTop: 16, padding: '8px 12px', background: '#0A0F2C', color: '#cdd6ec', borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
       <b style={{ color: '#C9A84C' }}>Engine status</b> · Deal type: <b style={{ color: '#fff' }}>{t?.label || typeId}</b>
-      {' · '}Mode: <b style={{ color: '#fff' }}>{modeLabel}</b>
-      {' · '}Route: <span style={{ color: '#fff' }}>{engineRoute(typeId, analysisMode)}</span>
+      {' · '}Route: <span style={{ color: '#fff' }}>{engineRoute(typeId)}</span>
       {' · '}Math Bible v3.1 · App v{VERSION}
     </div>
   )
@@ -357,12 +335,8 @@ function StatusLine({ typeId, analysisMode }) {
 
 export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [typeId, setTypeId] = useState('residential')
-  // 'standard' = the FULL Baby Analyzer screen (document + photo upload, beds/
-  // baths/sqft, rehab, comps, bible math). This is the default — it's the useful
-  // tool. 'deep' = the optional manual scenario underwriter for this type. The
-  // standard screen is NEVER hidden by default; deep is an explicit opt-in.
-  const [analysisMode, setAnalysisMode] = useState('standard')
   const [mode, setMode] = useState('flip')
+  const [advancedOpen, setAdvancedOpen] = useState(false)
   const [fields, setFields] = useState({ address: '', city: '', state: '', zip: '' })
   const [docs, setDocs] = useState([])
   const [photos, setPhotos] = useState([])
@@ -374,11 +348,8 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const type = getType(typeId)
   const deep = DEEP_COMPONENT[typeId]
   const DeepComp = deep?.Comp
-  // Land has NO standard offer engine (intake only) — its real tool IS the deep
-  // LandTab, so land always uses deep. Every other type defaults to the full
-  // standard screen and only switches to deep when the operator opts in.
-  const landForcesDeep = typeId === 'ios_land'
-  const showDeep = Boolean(deep) && (landForcesDeep || analysisMode === 'deep')
+  // Land has NO guided offer engine — its dedicated intake IS the main screen.
+  const isLand = typeId === 'ios_land'
   // URL slice handed to the inline deep underwriter (storage/residential carry
   // their own URL schema; other deep tools ignore it).
   const deepUrl = typeId === 'self_storage' ? deepUrlState?.storage
@@ -591,35 +562,8 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
         <select style={inp} value={typeId} onChange={e => { setTypeId(e.target.value); const t = getType(e.target.value); if (t.subModes) setMode(t.subModes[0].id) }}>
           {PROPERTY_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
-        {/* Analysis depth — only for types that HAVE a deeper underwriter. The
-            DEFAULT is the full standard screen (documents, photos, beds/baths,
-            rehab, comps + bible math). "Deep" is an optional manual scenario
-            underwriter. Both run the same Math Bible engines. Land has no standard
-            engine, so its toggle is hidden (it always uses the deep intake). */}
-        {deep && !landForcesDeep && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#1E2A45', marginBottom: 4 }}>Analysis depth</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {[
-                { id: 'standard', label: 'Full Analysis', sub: 'Documents, photos, beds/baths, rehab, comps + offer' },
-                { id: 'deep', label: `Deep ${deep.label} underwriter`, sub: 'Manual scenario tables (no documents/photos)' }
-              ].map(m => {
-                const on = analysisMode === m.id
-                return (
-                  <button key={m.id} type="button" onClick={() => setAnalysisMode(m.id)}
-                    style={{ flex: '1 1 220px', textAlign: 'left', padding: '8px 12px', borderRadius: 6, border: `1px solid ${on ? '#0A0F2C' : '#C9A84C'}`, cursor: 'pointer', background: on ? '#0A0F2C' : '#fff', color: on ? '#fff' : '#1E2A45' }}>
-                    <div style={{ fontWeight: 700, color: on ? '#C9A84C' : '#0A0F2C' }}>{m.label}{on ? ' ✓' : ''}</div>
-                    <div style={{ fontSize: 11, color: on ? '#cdd6ec' : '#6b7280' }}>{m.sub}</div>
-                  </button>
-                )
-              })}
-            </div>
-            <p style={{ ...srcStyle, marginTop: 6 }}>Full Analysis reads uploaded OM/T-12/photos and pulls comps. The deep underwriter adds: {deep.extras}.</p>
-          </div>
-        )}
-        {/* Flip / Rental etc. submodes apply to the standard screen — the deep
-            underwriter carries its own submode controls. */}
-        {type.subModes && !showDeep && (
+        {/* Flip / Rental etc. submodes (guided screen only). */}
+        {type.subModes && !isLand && (
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
             {type.subModes.map(m => (
               <button key={m.id} type="button" onClick={() => setMode(m.id)}
@@ -629,13 +573,14 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
             ))}
           </div>
         )}
-        {type.note && !showDeep && <p style={{ ...srcStyle, marginTop: 8 }}>{type.note}</p>}
+        {type.note && <p style={{ ...srcStyle, marginTop: 8 }}>{type.note}</p>}
         {!type.implemented && !deep && <p style={{ color: '#C8851A', fontWeight: 600, marginTop: 8 }}>⚠ Supported intake — analysis module not yet implemented for this type.</p>}
       </div>
 
-      {showDeep ? (
+      {isLand ? (
+        // Land has no guided offer engine — the dedicated land intake IS the screen.
         <div className="no-print">
-          <DeepComp urlState={deepUrl} sharedUrlState={sharedUrlState} />
+          <DeepComp sharedUrlState={sharedUrlState} />
         </div>
       ) : (<>
       <div style={card} className="no-print">
@@ -690,9 +635,23 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       </div>
 
       {result && <Results r={result} />}
+
+      {/* Advanced — OPTIONAL manual scenario underwriter for this type. Collapsed
+          by default so the guided analysis above stays the clear main path. */}
+      {deep && (
+        <details className="no-print" style={card} onToggle={e => setAdvancedOpen(e.currentTarget.open)}>
+          <summary style={{ cursor: 'pointer', fontWeight: 700, color: '#0A0F2C' }}>
+            Advanced — manual {deep.label} scenario underwriting (optional)
+          </summary>
+          <p style={{ ...srcStyle, margin: '6px 0 10px' }}>
+            The guided analysis above is the normal path (documents, photos, comps + offer). Open this only to hand-enter every financing scenario yourself: {deep.extras}. Same Math Bible engine — nothing here changes the numbers above.
+          </p>
+          {advancedOpen && <DeepComp urlState={deepUrl} sharedUrlState={sharedUrlState} />}
+        </details>
+      )}
       </>)}
 
-      <StatusLine typeId={typeId} analysisMode={analysisMode} />
+      <StatusLine typeId={typeId} />
     </div>
   )
 }

@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { describe, it, expect } from 'vitest'
 import App from '../App.jsx'
 
-// New single-path UI contract (2026-06-02): the top navigation exposes ONLY
-// "Analyze a Deal" and "QA Runner". Property type is chosen from a dropdown
-// inside Analyze a Deal; each deep underwriter (Storage / Residential / MHP /
-// Commercial / Mixed Use / Land) mounts inline under "Full Analysis" mode.
+// Single-path UI contract: top nav = "Analyze a Deal" + "QA Runner" only. Inside
+// Analyze a Deal, ONE guided analyzer per type is the main screen (questions +
+// document/photo upload + comps + bible math). The manual scenario tables are an
+// OPTIONAL collapsed "Advanced" expander. We ask Income/Expenses, never NOI.
 describe('App skeleton — one analyzer path', () => {
   it('renders the title and version', () => {
     render(<App />)
@@ -18,51 +18,54 @@ describe('App skeleton — one analyzer path', () => {
     render(<App />)
     expect(screen.getByRole('button', { name: 'Analyze a Deal' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'QA Runner' })).toBeInTheDocument()
-    // The old per-type top tabs must be gone from the nav.
     expect(screen.queryByRole('button', { name: 'Storage' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Residential' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'MHP' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Mixed Use' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Quick Analysis' })).not.toBeInTheDocument()
   })
 
-  it('defaults to the FULL Baby Analyzer screen: questions + document/photo upload', () => {
+  it('defaults to the guided screen: questions + document/photo upload', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: /Property Type/i })).toBeInTheDocument()
-    // Default = the full standard screen — deal info + document/photo upload are present.
     expect(screen.getByRole('heading', { name: /Deal Information/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
-    // The deep manual underwriter is NOT shown by default.
-    expect(screen.queryByRole('heading', { name: 'Residential' })).not.toBeInTheDocument()
-    // Depth toggle is present (full default + optional deep).
-    expect(screen.getByRole('button', { name: /Full Analysis/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Deep Residential underwriter/i })).toBeInTheDocument()
+    // No Fast/Deep mode toggle anymore.
+    expect(screen.queryByRole('button', { name: /FastCalc/i })).not.toBeInTheDocument()
   })
 
-  it('opting into the deep underwriter mounts it inline (and hides the standard upload)', async () => {
+  it('asks Income + Expenses, never NOI, for income types', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: /Deep Residential underwriter/i }))
-    expect(screen.getByRole('heading', { name: 'Residential' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: /Upload Documents & Photos/i })).not.toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox'), 'self_storage')
+    expect(screen.getByText(/Gross Annual Income/i)).toBeInTheDocument()
+    expect(screen.getByText(/Annual Operating Expenses/i)).toBeInTheDocument()
+    // The form must NOT ask the user to type an NOI.
+    expect(screen.queryByText(/Net Operating Income/i)).not.toBeInTheDocument()
   })
 
-  it('Self Storage keeps the full upload screen by default; deep is one opt-in click', async () => {
+  it('uses non-overlapping unit bands: 1-4 / 5-19 / 20+', async () => {
     const user = userEvent.setup()
     render(<App />)
     const select = screen.getByRole('combobox')
-    await user.selectOptions(select, 'self_storage')
-    // Default stays on the full screen — documents/photos still accepted.
-    expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Deep Self Storage underwriter/i }))
-    expect(screen.getByRole('heading', { name: 'Storage' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /1–4 units/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /5–19 units/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /20\+ units/i })).toBeInTheDocument()
+    // No "1–19" overlapping band.
+    expect(screen.queryByRole('option', { name: /1–19/i })).not.toBeInTheDocument()
+    await user.selectOptions(select, 'self_storage') // sanity: selection works
   })
 
-  it('shows the engine status line for confidence/debugging', () => {
+  it('exposes the deep underwriter as an optional collapsed Advanced section', () => {
+    render(<App />)
+    // Default type residential → Advanced manual underwriting is present but collapsed.
+    expect(screen.getByText(/Advanced — manual Residential scenario underwriting/i)).toBeInTheDocument()
+    // The deep "Residential" heading is inside <details> (collapsed) — not a top tab.
+    expect(screen.queryByRole('button', { name: 'Residential' })).not.toBeInTheDocument()
+  })
+
+  it('shows the engine status line', () => {
     render(<App />)
     expect(screen.getByText(/Engine status/i)).toBeInTheDocument()
-    // "App v0.7.1" appears only in the status line (footer says "Math Bible v3.1").
-    expect(screen.getByText(/App v0\.7\.1/i)).toBeInTheDocument()
+    expect(screen.getByText(/App v0\.7\.2/i)).toBeInTheDocument()
   })
 
   it('QA Runner tab loads without crashing', async () => {
@@ -73,11 +76,10 @@ describe('App skeleton — one analyzer path', () => {
     expect(screen.getByRole('button', { name: /Run all QA tests/i })).toBeInTheDocument()
   })
 
-  it('Land / IOS is reachable from the dropdown (deep intake mounts inline)', async () => {
+  it('Land / IOS opens its dedicated intake as the main screen', async () => {
     const user = userEvent.setup()
     render(<App />)
-    const select = screen.getByRole('combobox')
-    await user.selectOptions(select, 'ios_land')
+    await user.selectOptions(screen.getByRole('combobox'), 'ios_land')
     expect(screen.getByRole('heading', { name: /Land \/ IOS \/ Outdoor Storage/i })).toBeInTheDocument()
   })
 })

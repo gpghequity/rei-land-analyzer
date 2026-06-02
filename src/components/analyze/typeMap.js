@@ -1,24 +1,27 @@
 // src/components/analyze/typeMap.js
 //
 // The single source of truth mapping each supported property type to:
-//   - its question set (vertical-stacked fields)
+//   - its question set (vertical-stacked fields) — the REAL questions for that
+//     deal type, not a generic blob
 //   - which existing bible-math /api/calc engine analyzes it (NO new math)
 //   - how to build the /api/calc payload from the collected fields
 //   - whether an analysis engine exists yet
 //
-// Engine routing per Steve's directive:
-//   Residential          → residential_mao (flip) / residential_dscr (rental)
+// HARD RULES (per Steve):
+//   • NEVER ask the user for NOI. Ask Gross Annual Income + Annual Operating
+//     Expenses; Baby Analyzer computes NOI itself, ALWAYS.
+//   • Unit bands do NOT overlap: 1–4 (residential), 5–19 (small MF), 20+ (large MF).
+//   • Each deal type asks the questions that type actually needs.
+//
+// Engine routing per Steve's directive (unchanged math):
+//   Residential 1–4      → residential_mao (flip) / residential_dscr (rental)
 //   Self Storage         → storage_group_a
-//   Multifamily 1-19     → multifamily_small  (agency 80/20 @ 7%/30yr — Bible v3.1 tier)
+//   Multifamily 5–19     → multifamily_small  (agency 80/20 @ 7%/30yr — Bible v3.1 tier)
 //   Multifamily 20+      → multifamily_large  (commercial 75/25 @ 7.25%/25yr — Bible v3.1 tier)
 //   Commercial           → commercial_dscr   (Retail / Office / Warehouse)
 //   MHP / RV Park        → mhp_noi → storage_group_a
 //   Mixed Use            → commercial_dscr on blended NOI
-//   IOS / Land           → storage_group_a IF income present; else INTAKE-ONLY.
-//                          Full land/IOS underwriting lives in the dedicated Land / IOS tab.
-//
-// Multifamily tiers reuse EXISTING frozen engines with Bible-confirmed constants
-// (no new math): 1-19 uses residential bank terms, 20+ uses storage bank terms.
+//   IOS / Land           → LAND supported-intake (no offer engine)
 //
 // Lending is intentionally excluded from Baby Analyzer.
 
@@ -27,54 +30,58 @@ const num = (v) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-// NOI from an explicit NOI field, else Gross − Expenses($), else Gross × (1 − ratio%).
-// The ratio is a whole percent (41 → 0.41); an out-of-range value (e.g. 41000,
-// a fat-finger of dollars into the % field) is treated as unset so NOI can never
-// go negative from a typo.
+// NOI from Gross − Expenses($), else Gross × (1 − 40% default). A doc-extracted
+// NOI (f.noi) is accepted as a fallback ONLY — the USER form never asks for NOI.
+// An out-of-range expense ratio (e.g. 41000 fat-fingered into a % field) is
+// ignored so a typo can never drive NOI negative.
 function deriveNOI(f) {
-  if (num(f.noi) > 0) return num(f.noi);
   const gross = num(f.grossIncome);
   if (gross > 0) {
     const expD = num(f.expenses);
     if (expD > 0) return Math.max(0, Math.round(gross - expD));
     let er = (f.expenseRatio !== '' && f.expenseRatio != null) ? num(f.expenseRatio) / 100 : 0.4;
-    if (!(er >= 0) || er > 1) er = 0.4;                 // sanitize out-of-range %
+    if (!(er >= 0) || er > 1) er = 0.4;
     return Math.round(gross * (1 - er));
   }
+  if (num(f.noi) > 0) return num(f.noi); // doc-extracted NOI fallback only
   return 0;
 }
 
+// Shared income questions — Income + Expenses ONLY (NOI is computed, never asked).
 const INCOME_FIELDS = [
   { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
-  { key: 'noi', label: 'Net Operating Income — NOI ($/yr)', type: 'money', hint: 'If blank, Baby Analyzer computes NOI from Gross minus Expenses (or the ratio) below.' },
-  { key: 'grossIncome', label: 'Gross Income ($/yr)', type: 'money' },
-  { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', hint: 'Enter actual dollars. If set, NOI = Gross − Expenses (storage enforces a 35% expense floor).' },
-  { key: 'expenseRatio', label: 'Operating Expense Ratio (%)', type: 'number', hint: 'Alternative to dollars. A PERCENT like 41 (not 41000). Defaults to 40% if blank or out of range.' }
+  { key: 'grossIncome', label: 'Gross Annual Income ($/yr)', type: 'money', hint: 'All rent + other income for the year, BEFORE expenses.' },
+  { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', hint: 'Taxes, insurance, utilities, management, repairs, reserves. Baby Analyzer computes NOI = Income − Expenses (storage enforces a 35% expense floor). Leave blank and a 40% expense assumption is used.' }
 ];
 
 export const PROPERTY_TYPES = [
   {
     id: 'residential',
-    label: 'Residential (SFR / 2–4 units)',
+    label: 'Single Family / Residential — 1–4 units',
     enrichAssetType: 'residential',
     implemented: true,
     subModes: [
       { id: 'flip', label: 'Flip (MAO)' },
       { id: 'rental', label: 'Rental (DSCR)' }
     ],
+    // Beds/baths/sqft/stories drive comps AND the rehab condition engine.
     fields: [
       { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
       { key: 'arv', label: 'After-Repair Value — ARV ($)', type: 'money', modes: ['flip'] },
-      { key: 'rehab', label: 'Rehab Budget ($)', type: 'money', modes: ['flip'] },
-      { key: 'noi', label: 'Net Operating Income — NOI ($/yr)', type: 'money', modes: ['rental'] },
+      { key: 'rehab', label: 'Rehab Budget ($) — or use the condition section below', type: 'money', modes: ['flip'], hint: 'Enter a known rehab number, or leave blank and answer the property-condition questions to have Rehab Calc compute it.' },
+      { key: 'grossIncome', label: 'Gross Annual Rent ($/yr)', type: 'money', modes: ['rental'], hint: 'All rent + other income for the year, before expenses.' },
+      { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', modes: ['rental'], hint: 'Taxes, insurance, management, repairs, reserves. NOI = Rent − Expenses (40% assumed if blank).' },
       { key: 'purchase', label: 'Purchase Price for DSCR ($)', type: 'money', modes: ['rental'], hint: 'Defaults to asking price if blank.' },
+      { key: 'units', label: 'Number of Units (1–4)', type: 'number' },
       { key: 'beds', label: 'Beds', type: 'number' },
       { key: 'baths', label: 'Baths', type: 'number' },
-      { key: 'sqft', label: 'Square Feet', type: 'number' }
+      { key: 'sqft', label: 'Living Square Feet', type: 'number' },
+      { key: 'stories', label: 'Stories', type: 'number' },
+      { key: 'yearBuilt', label: 'Year Built', type: 'number' }
     ],
     buildCalc: (f, mode) => {
       if (mode === 'rental') {
-        const noi = num(f.noi);
+        const noi = deriveNOI(f);
         const purchase = num(f.purchase) || num(f.askingPrice);
         if (noi <= 0 || purchase <= 0) return null;
         return { type: 'residential_dscr', inputs: { annualNOI: noi, purchase } };
@@ -90,18 +97,26 @@ export const PROPERTY_TYPES = [
     label: 'Self Storage',
     enrichAssetType: 'storage',
     implemented: true,
-    fields: INCOME_FIELDS,
+    fields: [
+      { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
+      { key: 'totalUnits', label: 'Total Units', type: 'number' },
+      { key: 'climateUnits', label: 'Climate-Controlled Units', type: 'number' },
+      { key: 'netRentableSqft', label: 'Net Rentable Square Feet', type: 'number' },
+      { key: 'occupancy', label: 'Physical Occupancy (%)', type: 'number', hint: 'Percent of units currently rented, e.g. 88.' },
+      { key: 'grossIncome', label: 'Gross Annual Income ($/yr)', type: 'money', hint: 'All rent + late fees + admin/insurance income, before expenses.' },
+      { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', hint: 'NOI = Income − Expenses; a 35% expense floor is enforced. 40% assumed if blank.' }
+    ],
     buildCalc: (f) => { const noi = deriveNOI(f); return noi > 0 ? { type: 'storage_group_a', inputs: { noi } } : null; }
   },
   {
     id: 'multifamily_small',
-    label: 'Multifamily — 1–19 units',
+    label: 'Multifamily — 5–19 units',
     enrichAssetType: 'multifamily',
     implemented: true,
     note: 'Agency-style financing: 80/20 LTV @ 7% / 30-yr (Math Bible v3.1 small-MF tier). NOI → 1.25 DSCR → max purchase. Reuses the residential bank engine — not a new engine.',
     fields: [
-      ...INCOME_FIELDS,
-      { key: 'units', label: 'Number of Units (1–19)', type: 'number' }
+      { key: 'units', label: 'Number of Units (5–19)', type: 'number' },
+      ...INCOME_FIELDS
     ],
     buildCalc: (f) => { const noi = deriveNOI(f); return noi > 0 ? { type: 'multifamily_small', inputs: { noi } } : null; }
   },
@@ -112,8 +127,8 @@ export const PROPERTY_TYPES = [
     implemented: true,
     note: 'Storage / commercial income-property framework: 75/25 LTV @ 7.25% / 25-yr (Math Bible v3.1 large-MF tier). Routes through the income scenario matrix (Group A/B/C bank + seller-finance), identical capital stack to Storage Group A.',
     fields: [
-      ...INCOME_FIELDS,
-      { key: 'units', label: 'Number of Units (20+)', type: 'number' }
+      { key: 'units', label: 'Number of Units (20+)', type: 'number' },
+      ...INCOME_FIELDS
     ],
     // Income-matrix asset (isIncomeAsset) — the matrix renders it. buildCalc is a
     // single-offer fallback (same number) kept for the /api/calc regression harness.
@@ -130,8 +145,12 @@ export const PROPERTY_TYPES = [
       { id: 'warehouse', label: 'Warehouse' }
     ],
     fields: [
-      ...INCOME_FIELDS,
-      { key: 'sqft', label: 'Building Square Feet', type: 'number' }
+      { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
+      { key: 'sqft', label: 'Building Square Feet', type: 'number' },
+      { key: 'leasableSqft', label: 'Net Leasable Square Feet', type: 'number' },
+      { key: 'occupancy', label: 'Occupancy (%)', type: 'number', hint: 'Percent leased, e.g. 90.' },
+      { key: 'grossIncome', label: 'Gross Annual Income ($/yr)', type: 'money', hint: 'Base rent + reimbursements + other income, before expenses.' },
+      { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', hint: 'NOI = Income − Expenses (40% assumed if blank).' }
     ],
     buildCalc: (f) => { const noi = deriveNOI(f); return noi > 0 ? { type: 'commercial_dscr', inputs: { annualNOI: noi } } : null; }
   },
@@ -140,18 +159,25 @@ export const PROPERTY_TYPES = [
     label: 'Mobile Home Park / RV Park',
     enrichAssetType: 'mhp',
     implemented: true,
+    note: 'Income is built from lot economics (lots × lot rent + park-owned homes). Baby Analyzer computes NOI and runs the storage/commercial income framework.',
     fields: [
       { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
       { key: 'lots', label: 'Total Lots', type: 'number' },
       { key: 'lotRent', label: 'Lot Rent ($/lot/month)', type: 'money' },
       { key: 'pohUnits', label: 'Park-Owned Homes (count)', type: 'number' },
       { key: 'pohRent', label: 'POH Rent ($/unit/month)', type: 'money' },
-      { key: 'expenseRatio', label: 'Operating Expense Ratio (%)', type: 'number', hint: 'Defaults to 40% if blank.' }
+      { key: 'expenses', label: 'Annual Operating Expenses ($/yr)', type: 'money', hint: 'Leave blank to use a 40% expense assumption on the gross lot income.' }
     ],
-    // MHP is two-step: mhp_noi → storage_group_a on the resulting NOI.
+    // MHP is two-step: mhp_noi → storage_group_a on the resulting NOI. Income is
+    // built from lot economics (lots × lot rent + park-owned homes) inside the
+    // engine; we only convert an expense-dollars entry into the ratio it expects.
     buildCalc: (f) => {
       const lots = num(f.lots);
       if (lots <= 0) return null;
+      const grossEst = lots * num(f.lotRent) * 12 + num(f.pohUnits) * num(f.pohRent) * 12;
+      const er = (num(f.expenses) > 0 && grossEst > 0)
+        ? Math.min(0.95, num(f.expenses) / grossEst)
+        : 0.4;
       return {
         type: 'mhp_noi',
         inputs: {
@@ -159,7 +185,7 @@ export const PROPERTY_TYPES = [
           lotRent: num(f.lotRent),
           pohUnits: num(f.pohUnits),
           pohRent: num(f.pohRent),
-          expenseRatio: f.expenseRatio !== '' && f.expenseRatio != null ? num(f.expenseRatio) / 100 : 0.4
+          expenseRatio: er
         },
         chainToStorage: true
       };
@@ -170,7 +196,7 @@ export const PROPERTY_TYPES = [
     label: 'Mixed Use',
     enrichAssetType: 'commercial',
     implemented: true,
-    note: 'Headline uses blended NOI through the commercial engine. Switch to the Deep Mixed Use underwriter (toggle above) for full per-component blending.',
+    note: 'Headline uses blended NOI through the commercial engine. Open the Advanced section for full per-component blending.',
     fields: INCOME_FIELDS,
     buildCalc: (f) => { const noi = deriveNOI(f); return noi > 0 ? { type: 'commercial_dscr', inputs: { annualNOI: noi } } : null; }
   },
@@ -179,7 +205,7 @@ export const PROPERTY_TYPES = [
     label: 'Land / IOS / Outdoor Storage',
     enrichAssetType: 'land',
     implemented: false, // no approved land OFFER engine exists — land uses supported-intake
-    note: 'Land / IOS / outdoor storage uses LAND supported-intake logic — the dedicated land underwriter opens automatically for this type (full facts + zoning + unit-price metrics + risk + LOI report). Land is NEVER routed through storage, residential, multifamily, or commercial building math.',
+    note: 'Land / IOS / outdoor storage uses LAND supported-intake logic — the dedicated land underwriter opens automatically for this type. Land is NEVER routed through storage, residential, multifamily, or commercial building math.',
     fields: [
       { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
       { key: 'acres', label: 'Acres', type: 'number' }
