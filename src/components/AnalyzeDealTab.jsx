@@ -131,6 +131,48 @@ function Val({ label, value, source }) {
 
 const cell = (v) => (v == null || v === 0) ? '—' : money(v)
 
+// ── Data Sources ledger — shows EVERY enrichment source and its honest status ──
+const SRC_STATUS = {
+  ok:      { color: '#2F7A40', bg: '#eaf6ed', label: 'LIVE' },
+  no_data: { color: '#6b7280', bg: '#f1f3f7', label: 'NO DATA' },
+  no_key:  { color: '#C8851A', bg: '#fff4e0', label: 'NEEDS KEY' },
+  failed:  { color: '#B23030', bg: '#fdeaea', label: 'FAILED' }
+}
+function DataSources({ sources, counts }) {
+  if (!sources || !sources.length) return null
+  const order = { ok: 0, failed: 1, no_key: 2, no_data: 3 }
+  const sorted = [...sources].sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9))
+  return (
+    <div style={card}>
+      <h3 style={h3}>Data Sources <span style={srcStyle}>(every service queried — nothing hidden)</span></h3>
+      {counts && (
+        <p style={{ fontSize: 13, margin: '0 0 8px' }}>
+          <b style={{ color: '#2F7A40' }}>{counts.ok || 0} live</b> · {' '}
+          <b style={{ color: '#B23030' }}>{counts.failed || 0} failed</b> · {' '}
+          <b style={{ color: '#C8851A' }}>{counts.no_key || 0} need a key</b> · {' '}
+          <span style={{ color: '#6b7280' }}>{counts.no_data || 0} no data</span>
+        </p>
+      )}
+      <div style={{ display: 'grid', gap: 6 }}>
+        {sorted.map((s, i) => {
+          const st = SRC_STATUS[s.status] || SRC_STATUS.no_data
+          return (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '92px 1fr', gap: 8, alignItems: 'start', padding: '6px 8px', background: i % 2 ? '#f7f9fd' : '#fff', borderRadius: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: st.color, background: st.bg, border: `1px solid ${st.color}`, borderRadius: 4, padding: '2px 6px', textAlign: 'center' }}>{st.label}</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#0A0F2C' }}>{s.label}</div>
+                <div style={{ fontSize: 12, color: '#1E2A45' }}>{s.summary || s.reason || '—'}</div>
+                {s.status === 'no_key' && s.env_var && <div style={srcStyle}>Activate by setting {s.env_var} on rei-data-enrichment.</div>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <p style={srcStyle}>LIVE = real data used · NEEDS KEY = provider not yet activated · FAILED = lookup errored (treat as unverified) · NO DATA = source had nothing for this address.</p>
+    </div>
+  )
+}
+
 // ── SECTION 1: Executive Summary (income assets) ──
 function ExecutiveSummary({ r }) {
   const s = r.matrix.summary
@@ -244,7 +286,19 @@ function DetailCards({ rows, assumptions }) {
   )
 }
 
-export default function AnalyzeDealTab() {
+// Each asset that has a DEEPER dedicated tab maps here. The unified flow never
+// competes with the deep tool — it hands off to it. (Multifamily + the AI
+// document/photo/comps pipeline have no deeper tab, so they stay in this flow.)
+const DEEP_TAB = {
+  self_storage: { id: 'storage', label: 'Storage', extras: 'Group A/B/C scenarios, ramp & sunset tests, 5-yr kicker, equity/cash-to-close detail' },
+  residential:  { id: 'residential', label: 'Residential', extras: '3-card pad stack, Owner Hard Mode, comps-based ARV percentile' },
+  mhp_rv:       { id: 'mhp', label: 'MHP / RV Park', extras: '3 vacancy scenarios, utility-responsibility matrix, lot-count validation, per-lot economics' },
+  commercial:   { id: 'commercial', label: 'Commercial', extras: 'full rent roll, tenant concentration, WALT + rollover, subclass warnings, TI/LC reserves' },
+  mixed_use:    { id: 'mixeduse', label: 'Mixed Use', extras: 'per-component valuation + illiquidity discount' },
+  ios_land:     { id: 'land', label: 'Land / IOS', extras: '40-field intake, zoning review, 10-risk matrix, LOI terms' }
+}
+
+export default function AnalyzeDealTab({ onOpenTab }) {
   const [typeId, setTypeId] = useState('residential')
   const [mode, setMode] = useState('flip')
   const [fields, setFields] = useState({ address: '', city: '', state: '', zip: '' })
@@ -475,6 +529,17 @@ export default function AnalyzeDealTab() {
         )}
         {type.note && <p style={{ ...srcStyle, marginTop: 8 }}>{type.note}</p>}
         {!type.implemented && <p style={{ color: '#C8851A', fontWeight: 600, marginTop: 8 }}>⚠ Supported intake — analysis module not yet implemented for this type.</p>}
+        {DEEP_TAB[typeId] && onOpenTab && (
+          <div style={{ marginTop: 10, padding: '10px 14px', background: '#0A0F2C', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ color: '#fff', fontSize: 13 }}>
+              <b style={{ color: '#C9A84C' }}>Deeper {DEEP_TAB[typeId].label} underwriting available.</b> This quick flow gives a fast offer + AI docs/photos/comps. The full {DEEP_TAB[typeId].label} tool adds: {DEEP_TAB[typeId].extras}.
+            </div>
+            <button type="button" onClick={() => onOpenTab(DEEP_TAB[typeId].id)}
+              style={{ padding: '9px 16px', borderRadius: 6, border: 'none', background: '#C9A84C', color: '#0A0F2C', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Open full {DEEP_TAB[typeId].label} tool →
+            </button>
+          </div>
+        )}
       </div>
 
       <div style={card} className="no-print">
@@ -635,11 +700,16 @@ function Results({ r }) {
             {comps.avm && (comps.avm.low || comps.avm.high) && <Val label="AVM Range" value={`${money(comps.avm.low)} – ${money(comps.avm.high)}`} source={comps.avm.source} />}
             {comps.avm?.rent_estimate != null && <Val label="Rent Estimate" value={money(comps.avm.rent_estimate) + '/mo'} source={comps.avm.source} />}
             {comps.compContext && <p><b>Comp context:</b> {comps.compContext} <span style={srcStyle}>({comps.sources?.comps || 'Data Enrichment'})</span></p>}
-            {comps.flood && <Val label="Flood Zone" value={`${comps.flood.zone || '—'}${comps.flood.sfha ? ' (SFHA)' : ''}`} source="FEMA via Data Enrichment" />}
-            {comps.crime && <Val label="Neighborhood Safety" value={`${comps.crime.score ?? '—'} ${comps.crime.label ? '(' + comps.crime.label + ')' : ''}`} source="FBI/Census via Data Enrichment" />}
+            {comps.flood && <Val label="Flood Zone" value={`${comps.flood.zone || '—'}${comps.flood.sfha ? ' (SFHA — high risk)' : ''}`} source="FEMA via Data Enrichment" />}
+            {comps.crime && comps.crime.score != null && <Val label="Neighborhood Safety" value={`${comps.crime.score}/100 ${comps.crime.label ? '(' + comps.crime.label + ')' : ''}`} source="FBI/Census via Data Enrichment" />}
+            {comps.demographics && <Val label="Median Household Income" value={money(comps.demographics.medianIncome)} source="Census ACS via Data Enrichment" />}
+            {comps.demographics && comps.demographics.population != null && <Val label="Area Population / Poverty" value={`${Number(comps.demographics.population).toLocaleString()}${comps.demographics.povertyRate ? ' · ' + comps.demographics.povertyRate + ' poverty' : ''}`} source="Census ACS via Data Enrichment" />}
           </>
         )}
       </div>
+
+      {/* DATA SOURCES — full ledger of every service queried */}
+      <DataSources sources={comps?.allSources} counts={comps?.sourceCounts} />
 
       {/* DOCUMENT FINDINGS */}
       <div style={card}>

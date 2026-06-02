@@ -166,3 +166,25 @@
   storage capital-stack ✓ · MF routing ✓ · land no-fake-offer ✓.
 - **DEPLOYED — LIVE v0.6.1** at https://rei-baby-analyzer-production.up.railway.app.
   Live smoke: QA strings present; live /api/calc MF1-19 = $1,503,000 (matches fixture).
+
+---
+
+## Date: 2026-06-02 (v0.6.2 — persistence self-check + extractor-error surfacing + CRITICAL finding)
+
+- **`/api/qa-selfcheck`** (api/qaSelfCheck.js, wired in server.js): READ-ONLY Drive +
+  Properties-sheet reachability check (writes nothing). QA Runner "Live Persistence
+  Check" panel feeds the acceptance checklist. Live: drive ok (REI Property Folders),
+  sheet ok (38 cols).
+- **AnalyzeDealTab** now surfaces real extractor failures (doc-reader 401 etc.) instead
+  of silent blanks.
+- 241 tests pass; build clean. **DEPLOYED — LIVE v0.6.2.**
+
+### 🔴 CRITICAL platform finding (root cause of "asset type unknown")
+- The shared `ANTHROPIC_API_KEY` (sk-ant-api03-G9qy_...) is REVOKED — verified 401
+  against Anthropic. rei-doc-reader's own override key (sk-ant-api03-2LdIP...) is ALSO
+  revoked. ALL Claude features down platform-wide (extraction + every chatbot).
+- The Hattiesburg OM is perfectly parseable (NOI $45,901, pro-forma $105k, 130 units,
+  2.46 ac, 21,115 SF) — failure was the dead key, not the doc or Baby Analyzer.
+- FIX (Steve only): new key at console.anthropic.com → set ANTHROPIC_API_KEY on shared
+  Railway env + remove/replace the override on rei-doc-reader (project "merry-solace").
+  Documented in QUESTIONS_FOR_STEVE.md + Downloads/MORNING_BRIEF_2026-06-02.html.

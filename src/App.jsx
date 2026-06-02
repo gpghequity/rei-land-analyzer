@@ -73,7 +73,7 @@ export default function App() {
       </nav>
 
       <main>
-        <ActiveComponent urlState={tabUrlState} sharedUrlState={sharedUrlState} />
+        <ActiveComponent urlState={tabUrlState} sharedUrlState={sharedUrlState} onOpenTab={setActiveTab} />
       </main>
 
       <footer>

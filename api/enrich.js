@@ -66,10 +66,17 @@ export async function enrichCore(b = {}) {
         const r = research.json;
         out.flood = { zone: r.flood_zone, sfha: r.flood_is_sfha, label: r.flood_label };
         out.crime = { score: r.neighborhood_safety_score, label: r.neighborhood_safety_label };
+        out.demographics = (r.median_household_income != null || r.total_population != null) ? {
+          medianIncome: r.median_household_income, population: r.total_population, povertyRate: r.poverty_rate
+        } : null;
         out.rehabBenchmark = (r.rehab_low != null) ? {
           low: r.rehab_low, high: r.rehab_high, perSqft: r.rehab_per_sqft,
           tier: r.rehab_tier, source: r.rehab_source
         } : out.rehabBenchmark;
+        // The FULL per-source ledger (every adapter + honest status). This is
+        // what lets the UI show ALL sources, not just the ones that answered.
+        if (Array.isArray(r.sources)) out.allSources = r.sources;
+        if (r.source_counts) out.sourceCounts = r.source_counts;
         if (r.comp_context) out.compContext = r.comp_context;
         if (Array.isArray(r.comp_sources)) out.sources.comps = r.comp_sources.join(', ');
         if (!out.avm && r.avm_value != null) {
