@@ -170,16 +170,16 @@ export const PROPERTY_TYPES = [
     label: 'Mixed Use',
     enrichAssetType: 'commercial',
     implemented: true,
-    note: 'Headline uses blended NOI through the commercial engine. Use the Mixed Use tab for full per-component blending.',
+    note: 'Headline uses blended NOI through the commercial engine. Switch to the Deep Mixed Use underwriter (toggle above) for full per-component blending.',
     fields: INCOME_FIELDS,
     buildCalc: (f) => { const noi = deriveNOI(f); return noi > 0 ? { type: 'commercial_dscr', inputs: { annualNOI: noi } } : null; }
   },
   {
     id: 'ios_land',
-    label: 'Land / IOS / Outdoor Storage → open the “Land / IOS” tab',
+    label: 'Land / IOS / Outdoor Storage',
     enrichAssetType: 'land',
     implemented: false, // no approved land OFFER engine exists — land uses supported-intake
-    note: 'Land / IOS / outdoor storage uses LAND supported-intake logic. Open the dedicated “Land / IOS” tab for the full facts + zoning + unit-price metrics + risk + LOI report. Land is NEVER routed through storage, residential, multifamily, or commercial building math.',
+    note: 'Land / IOS / outdoor storage uses LAND supported-intake logic — the dedicated land underwriter opens automatically for this type (full facts + zoning + unit-price metrics + risk + LOI report). Land is NEVER routed through storage, residential, multifamily, or commercial building math.',
     fields: [
       { key: 'askingPrice', label: 'Seller Asking Price ($)', type: 'money' },
       { key: 'acres', label: 'Acres', type: 'number' }

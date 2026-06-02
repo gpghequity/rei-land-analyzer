@@ -26,38 +26,43 @@ describe('App skeleton — one analyzer path', () => {
     expect(screen.queryByRole('button', { name: 'Quick Analysis' })).not.toBeInTheDocument()
   })
 
-  it('shows the Analyze a Deal workspace with the property-type dropdown by default', () => {
+  it('defaults to the FULL Baby Analyzer screen: questions + document/photo upload', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: /Property Type/i })).toBeInTheDocument()
-    // Default type is Residential and default mode is Full Analysis → the deep
-    // Residential underwriter mounts inline (its own "Residential" heading).
-    expect(screen.getByRole('heading', { name: 'Residential' })).toBeInTheDocument()
-    // Mode toggle is present.
+    // Default = the full standard screen — deal info + document/photo upload are present.
+    expect(screen.getByRole('heading', { name: /Deal Information/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
+    // The deep manual underwriter is NOT shown by default.
+    expect(screen.queryByRole('heading', { name: 'Residential' })).not.toBeInTheDocument()
+    // Depth toggle is present (full default + optional deep).
     expect(screen.getByRole('button', { name: /Full Analysis/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /FastCalc/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Deep Residential underwriter/i })).toBeInTheDocument()
   })
 
-  it('switching to FastCalc shows the document/photo upload path', async () => {
+  it('opting into the deep underwriter mounts it inline (and hides the standard upload)', async () => {
     const user = userEvent.setup()
     render(<App />)
-    await user.click(screen.getByRole('button', { name: /FastCalc/i }))
-    expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Deep Residential underwriter/i }))
+    expect(screen.getByRole('heading', { name: 'Residential' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /Upload Documents & Photos/i })).not.toBeInTheDocument()
   })
 
-  it('choosing Self Storage in the dropdown mounts the deep Storage underwriter', async () => {
+  it('Self Storage keeps the full upload screen by default; deep is one opt-in click', async () => {
     const user = userEvent.setup()
     render(<App />)
     const select = screen.getByRole('combobox')
     await user.selectOptions(select, 'self_storage')
-    // Full Analysis is the default → deep Storage tool renders inline.
+    // Default stays on the full screen — documents/photos still accepted.
+    expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Deep Self Storage underwriter/i }))
     expect(screen.getByRole('heading', { name: 'Storage' })).toBeInTheDocument()
   })
 
   it('shows the engine status line for confidence/debugging', () => {
     render(<App />)
     expect(screen.getByText(/Engine status/i)).toBeInTheDocument()
-    // "App v0.7.0" appears only in the status line (footer says "Math Bible v3.1").
-    expect(screen.getByText(/App v0\.7\.0/i)).toBeInTheDocument()
+    // "App v0.7.1" appears only in the status line (footer says "Math Bible v3.1").
+    expect(screen.getByText(/App v0\.7\.1/i)).toBeInTheDocument()
   })
 
   it('QA Runner tab loads without crashing', async () => {
