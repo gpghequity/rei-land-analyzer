@@ -65,7 +65,7 @@ describe('App skeleton — one analyzer path', () => {
   it('shows the engine status line', () => {
     render(<App />)
     expect(screen.getByText(/Engine status/i)).toBeInTheDocument()
-    expect(screen.getByText(/App v0\.8\.1/i)).toBeInTheDocument()
+    expect(screen.getByText(/App v0\.9\.0/i)).toBeInTheDocument()
   })
 
   it('QA Runner tab loads without crashing', async () => {
@@ -74,6 +74,14 @@ describe('App skeleton — one analyzer path', () => {
     await user.click(screen.getByRole('button', { name: 'QA Runner' }))
     expect(screen.getByRole('heading', { name: /Baby Analyzer QA Runner/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Run all QA tests/i })).toBeInTheDocument()
+  })
+
+  it('Portfolio option renders the multi-building portfolio analyzer', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+    await user.selectOptions(screen.getByRole('combobox', { name: /property type/i }), 'portfolio')
+    expect(screen.getByRole('heading', { name: /Portfolio — multiple buildings/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Portfolio Offer/i })).toBeInTheDocument()
   })
 
   it('Land / IOS opens its dedicated intake as the main screen', async () => {
