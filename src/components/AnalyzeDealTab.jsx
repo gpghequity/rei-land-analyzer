@@ -2,6 +2,16 @@ import { useState } from 'react'
 import { PROPERTY_TYPES, getType, num } from './analyze/typeMap.js'
 import { buildIncomeMatrix, isIncomeAsset } from './analyze/incomeMatrix.js'
 import { storageNOI } from '../math/storage.js'
+import { VERSION } from '../version.js'
+// Deep underwriters — formerly separate top tabs, now mounted inline as the
+// "Full Analysis" mode for their property type. Same Math Bible engines
+// (src/math/*); reached from the single dropdown instead of a tab bar.
+import ResidentialTab from './ResidentialTab.jsx'
+import StorageTab from './StorageTab.jsx'
+import MhpTab from './MhpTab.jsx'
+import CommercialTab from './CommercialTab.jsx'
+import MixedUseTab from './MixedUseTab.jsx'
+import LandTab from './LandTab.jsx'
 
 // ── formatting ──
 const money = (v) => (v == null || v === '' || !Number.isFinite(Number(v)))
@@ -286,20 +296,65 @@ function DetailCards({ rows, assumptions }) {
   )
 }
 
-// Each asset that has a DEEPER dedicated tab maps here. The unified flow never
-// competes with the deep tool — it hands off to it. (Multifamily + the AI
-// document/photo/comps pipeline have no deeper tab, so they stay in this flow.)
-const DEEP_TAB = {
-  self_storage: { id: 'storage', label: 'Storage', extras: 'Group A/B/C scenarios, ramp & sunset tests, 5-yr kicker, equity/cash-to-close detail' },
-  residential:  { id: 'residential', label: 'Residential', extras: '3-card pad stack, Owner Hard Mode, comps-based ARV percentile' },
-  mhp_rv:       { id: 'mhp', label: 'MHP / RV Park', extras: '3 vacancy scenarios, utility-responsibility matrix, lot-count validation, per-lot economics' },
-  commercial:   { id: 'commercial', label: 'Commercial', extras: 'full rent roll, tenant concentration, WALT + rollover, subclass warnings, TI/LC reserves' },
-  mixed_use:    { id: 'mixeduse', label: 'Mixed Use', extras: 'per-component valuation + illiquidity discount' },
-  ios_land:     { id: 'land', label: 'Land / IOS', extras: '40-field intake, zoning review, 10-risk matrix, LOI terms' }
+// Each property type that has a DEEPER dedicated underwriter maps here. These were
+// formerly separate top tabs; they now mount INLINE as this type's "Full Analysis"
+// mode. Same Math Bible engines (src/math/*) — nothing was deleted or weakened, the
+// strongest math is just reached from the one dropdown. `extras` documents what the
+// deep underwriter adds beyond the FastCalc headline. Types without a deep component
+// (multifamily 1–19 / 20+) already get their strongest output from the FastCalc
+// income/headline engines, so they have no separate Full mode.
+const DEEP_COMPONENT = {
+  self_storage: { Comp: StorageTab,    label: 'Self Storage',  extras: 'Group A/B/C scenarios, ramp & sunset tests, 5-yr kicker, equity/cash-to-close detail' },
+  residential:  { Comp: ResidentialTab, label: 'Residential',  extras: '3-card pad stack, Owner Hard Mode, comps-based ARV percentile, alt exit strategies' },
+  mhp_rv:       { Comp: MhpTab,         label: 'MHP / RV Park', extras: '3 vacancy scenarios, utility-responsibility matrix, lot-count validation, per-lot economics' },
+  commercial:   { Comp: CommercialTab,  label: 'Commercial',    extras: 'full rent roll, tenant concentration, WALT + rollover, subclass warnings, TI/LC reserves' },
+  mixed_use:    { Comp: MixedUseTab,    label: 'Mixed Use',     extras: 'per-component valuation + illiquidity discount' },
+  ios_land:     { Comp: LandTab,        label: 'Land / IOS',    extras: '40-field intake, zoning review, 10-risk matrix, unit-price metrics, LOI terms' }
 }
 
-export default function AnalyzeDealTab({ onOpenTab }) {
+// Human-readable engine route for the status line (item 14). Confidence/debug
+// only — it never changes any math; it just names which Bible engine is running.
+function engineRoute(typeId, analysisMode) {
+  const deep = DEEP_COMPONENT[typeId]
+  if (analysisMode === 'full' && deep) {
+    const eng = {
+      self_storage: 'storage.js (Group A/B/C · sunset · ramp · kicker)',
+      residential: 'residential.js + scenarioEngine.js',
+      mhp_rv: 'mhp.js',
+      commercial: 'commercial.js',
+      mixed_use: 'mixedUse.js',
+      ios_land: 'land.js (supported-intake — no offer engine)'
+    }[typeId]
+    return `${deep.label} · Full Analysis → ${eng}`
+  }
+  if (isIncomeAsset(typeId)) return `${getType(typeId)?.label || typeId} · FastCalc → income financing matrix (incomeMatrix.js)`
+  if (typeId === 'residential') return 'Residential · FastCalc → /api/calc residential_mao / residential_dscr'
+  if (typeId === 'multifamily_small') return 'Multifamily 1–19 · /api/calc multifamily_small (agency 80/20 · 7%/30yr)'
+  if (typeId === 'multifamily_large') return 'Multifamily 20+ · income financing matrix (75/25 · 7.25%/25yr)'
+  if (typeId === 'ios_land') return 'Land / IOS · supported-intake (no offer engine)'
+  return getType(typeId)?.label || typeId
+}
+
+// Always-visible status line — tells the operator exactly which engine is running.
+function StatusLine({ typeId, analysisMode }) {
+  const t = getType(typeId)
+  const deep = DEEP_COMPONENT[typeId]
+  const modeLabel = (analysisMode === 'full' && deep) ? 'Full Analysis' : 'FastCalc'
+  return (
+    <div className="no-print" style={{ marginTop: 16, padding: '8px 12px', background: '#0A0F2C', color: '#cdd6ec', borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
+      <b style={{ color: '#C9A84C' }}>Engine status</b> · Deal type: <b style={{ color: '#fff' }}>{t?.label || typeId}</b>
+      {' · '}Mode: <b style={{ color: '#fff' }}>{modeLabel}</b>
+      {' · '}Route: <span style={{ color: '#fff' }}>{engineRoute(typeId, analysisMode)}</span>
+      {' · '}Math Bible v3.1 · App v{VERSION}
+    </div>
+  )
+}
+
+export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [typeId, setTypeId] = useState('residential')
+  // FastCalc vs Full Analysis. Full is the default per Steve's directive — the
+  // deep underwriter runs unless the operator explicitly chooses the fast path.
+  const [analysisMode, setAnalysisMode] = useState('full')
   const [mode, setMode] = useState('flip')
   const [fields, setFields] = useState({ address: '', city: '', state: '', zip: '' })
   const [docs, setDocs] = useState([])
@@ -310,6 +365,14 @@ export default function AnalyzeDealTab({ onOpenTab }) {
   const [result, setResult] = useState(null)
 
   const type = getType(typeId)
+  const deep = DEEP_COMPONENT[typeId]
+  const DeepComp = deep?.Comp
+  const showDeep = analysisMode === 'full' && Boolean(deep)
+  // URL slice handed to the inline deep underwriter (storage/residential carry
+  // their own URL schema; other deep tools ignore it).
+  const deepUrl = typeId === 'self_storage' ? deepUrlState?.storage
+    : typeId === 'residential' ? deepUrlState?.residential
+      : null
   const activeFields = (type.fields || []).filter(f => !f.modes || f.modes.includes(mode))
   const set = (k, v) => setFields(p => ({ ...p, [k]: v }))
 
@@ -517,7 +580,33 @@ export default function AnalyzeDealTab({ onOpenTab }) {
         <select style={inp} value={typeId} onChange={e => { setTypeId(e.target.value); const t = getType(e.target.value); if (t.subModes) setMode(t.subModes[0].id) }}>
           {PROPERTY_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
-        {type.subModes && (
+        {/* Mode toggle — only for types that HAVE a deeper underwriter. FastCalc =
+            quick offer + AI docs/photos/comps. Full Analysis = the deep underwriter
+            for this type. Both run the same Math Bible engines. */}
+        {deep && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#1E2A45', marginBottom: 4 }}>How deep?</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {[
+                { id: 'full', label: 'Full Analysis', sub: `Deep ${deep.label} underwriter` },
+                { id: 'fast', label: 'FastCalc', sub: 'Quick offer + AI docs/photos/comps' }
+              ].map(m => {
+                const on = analysisMode === m.id
+                return (
+                  <button key={m.id} type="button" onClick={() => setAnalysisMode(m.id)}
+                    style={{ flex: '1 1 200px', textAlign: 'left', padding: '8px 12px', borderRadius: 6, border: `1px solid ${on ? '#0A0F2C' : '#C9A84C'}`, cursor: 'pointer', background: on ? '#0A0F2C' : '#fff', color: on ? '#fff' : '#1E2A45' }}>
+                    <div style={{ fontWeight: 700, color: on ? '#C9A84C' : '#0A0F2C' }}>{m.label}{on ? ' ✓' : ''}</div>
+                    <div style={{ fontSize: 11, color: on ? '#cdd6ec' : '#6b7280' }}>{m.sub}</div>
+                  </button>
+                )
+              })}
+            </div>
+            <p style={{ ...srcStyle, marginTop: 6 }}>Full Analysis adds: {deep.extras}.</p>
+          </div>
+        )}
+        {/* Flip / Rental etc. submodes apply to the FastCalc path only — the deep
+            underwriter carries its own submode controls. */}
+        {type.subModes && !showDeep && (
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
             {type.subModes.map(m => (
               <button key={m.id} type="button" onClick={() => setMode(m.id)}
@@ -527,21 +616,15 @@ export default function AnalyzeDealTab({ onOpenTab }) {
             ))}
           </div>
         )}
-        {type.note && <p style={{ ...srcStyle, marginTop: 8 }}>{type.note}</p>}
-        {!type.implemented && <p style={{ color: '#C8851A', fontWeight: 600, marginTop: 8 }}>⚠ Supported intake — analysis module not yet implemented for this type.</p>}
-        {DEEP_TAB[typeId] && onOpenTab && (
-          <div style={{ marginTop: 10, padding: '10px 14px', background: '#0A0F2C', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ color: '#fff', fontSize: 13 }}>
-              <b style={{ color: '#C9A84C' }}>Deeper {DEEP_TAB[typeId].label} underwriting available.</b> This quick flow gives a fast offer + AI docs/photos/comps. The full {DEEP_TAB[typeId].label} tool adds: {DEEP_TAB[typeId].extras}.
-            </div>
-            <button type="button" onClick={() => onOpenTab(DEEP_TAB[typeId].id)}
-              style={{ padding: '9px 16px', borderRadius: 6, border: 'none', background: '#C9A84C', color: '#0A0F2C', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              Open full {DEEP_TAB[typeId].label} tool →
-            </button>
-          </div>
-        )}
+        {type.note && !showDeep && <p style={{ ...srcStyle, marginTop: 8 }}>{type.note}</p>}
+        {!type.implemented && !deep && <p style={{ color: '#C8851A', fontWeight: 600, marginTop: 8 }}>⚠ Supported intake — analysis module not yet implemented for this type.</p>}
       </div>
 
+      {showDeep ? (
+        <div className="no-print">
+          <DeepComp urlState={deepUrl} sharedUrlState={sharedUrlState} />
+        </div>
+      ) : (<>
       <div style={card} className="no-print">
         <h3 style={h3}>2 · Deal Information</h3>
         <label style={lbl}>Property Address *</label>
@@ -594,6 +677,9 @@ export default function AnalyzeDealTab({ onOpenTab }) {
       </div>
 
       {result && <Results r={result} />}
+      </>)}
+
+      <StatusLine typeId={typeId} analysisMode={analysisMode} />
     </div>
   )
 }

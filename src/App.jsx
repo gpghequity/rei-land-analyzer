@@ -1,48 +1,46 @@
 import { useState, useEffect } from 'react'
 import AnalyzeDealTab from './components/AnalyzeDealTab.jsx'
-import QuickAnalysisTab from './components/QuickAnalysisTab.jsx'
-import StorageTab from './components/StorageTab.jsx'
-import ResidentialTab from './components/ResidentialTab.jsx'
-import MhpTab from './components/MhpTab.jsx'
-import CommercialTab from './components/CommercialTab.jsx'
-import MixedUseTab from './components/MixedUseTab.jsx'
-import LandTab from './components/LandTab.jsx'
 import QaTab from './components/QaTab.jsx'
 import { parseSearchString } from './connectors/urlParams.js'
 import { VERSION, BUILD_DATE } from './version.js'
 
+// ── ONE deal path ──
+// Per Steve's directive (2026-06-02): the top navigation no longer exposes a
+// separate tab per property type. There is ONE analyzer path — "Analyze a Deal" —
+// and the property type is chosen from a dropdown INSIDE it. Every deep
+// underwriter (Storage / Residential / MHP / Commercial / Mixed Use / Land) is
+// still here — it now mounts inside Analyze a Deal under "Full Analysis" mode,
+// driven by the same Math Bible engines (src/math/*). Nothing was deleted; the
+// strongest math is simply reached from the single dropdown instead of a tab bar.
+// The only other top-level entry is the non-property QA Runner.
 const TABS = [
   { id: 'analyze', label: 'Analyze a Deal', component: AnalyzeDealTab },
-  { id: 'quick', label: 'Quick Analysis', component: QuickAnalysisTab },
-  { id: 'storage', label: 'Storage', component: StorageTab },
-  { id: 'residential', label: 'Residential', component: ResidentialTab },
-  { id: 'mhp', label: 'MHP', component: MhpTab },
-  { id: 'commercial', label: 'Commercial', component: CommercialTab },
-  { id: 'mixeduse', label: 'Mixed Use', component: MixedUseTab },
-  { id: 'land', label: 'Land / IOS', component: LandTab },
   { id: 'qa', label: 'QA Runner', component: QaTab }
 ]
 
-// Read URL params once at module load — populates initial active tab + tab states.
+// Read URL params once at module load — populates initial active tab + deep-tab states.
 const initialUrlState = typeof window !== 'undefined'
   ? parseSearchString(window.location.search)
   : { tab: null, storage: {}, residential: {} }
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState(initialUrlState.tab || 'analyze')
+// Only 'analyze' and 'qa' remain as real top-level tabs. A legacy ?tab=storage
+// link (now a dropdown choice, not a tab) must NOT crash — fall back to analyze.
+const VALID_TAB_IDS = new Set(TABS.map((t) => t.id))
 
-  // Keep document title in sync with the active tab — helps when operator
-  // has the page open alongside Fast Calc / Rehab Calc tabs.
+export default function App() {
+  const [activeTab, setActiveTab] = useState(
+    VALID_TAB_IDS.has(initialUrlState.tab) ? initialUrlState.tab : 'analyze'
+  )
+
+  // Keep document title in sync with the active tab.
   useEffect(() => {
     document.title = `Baby Analyzer — ${TABS.find((t) => t.id === activeTab)?.label || ''}`
   }, [activeTab])
 
-  const ActiveComponent = TABS.find(t => t.id === activeTab).component
-  const tabUrlState = activeTab === 'storage' ? initialUrlState.storage
-    : activeTab === 'residential' ? initialUrlState.residential
-    : null
-  // Land tab takes only shared deal info (address / asking) — no tab-specific URL schema.
-  // Exit strategies tab takes no url state — it manages its own form state
+  const ActiveComponent = (TABS.find((t) => t.id === activeTab) || TABS[0]).component
+
+  // Shared deal info (address / asking) handed to whichever deep underwriter
+  // the dropdown mounts inside Analyze a Deal.
   const sharedUrlState = {
     address: initialUrlState.address,
     propertyName: initialUrlState.propertyName,
@@ -57,7 +55,7 @@ export default function App() {
       </header>
 
       <nav className="no-print">
-        {TABS.map(tab => {
+        {TABS.map((tab) => {
           const isActive = activeTab === tab.id
           return (
             <button
@@ -73,7 +71,7 @@ export default function App() {
       </nav>
 
       <main>
-        <ActiveComponent urlState={tabUrlState} sharedUrlState={sharedUrlState} onOpenTab={setActiveTab} />
+        <ActiveComponent sharedUrlState={sharedUrlState} deepUrlState={initialUrlState} />
       </main>
 
       <footer>

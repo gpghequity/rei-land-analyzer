@@ -1,3 +1,3 @@
 // Single source of truth for the app version (used by App header/footer + QA report).
-export const VERSION = '0.6.3'
+export const VERSION = '0.7.0'
 export const BUILD_DATE = '2026-06-02'
