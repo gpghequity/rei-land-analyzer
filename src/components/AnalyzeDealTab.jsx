@@ -680,7 +680,19 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       photos.forEach(f => fd.append('photos', f))
       fd.append('meta', JSON.stringify({
         propertyType: typeId, address: fields.address, city: fields.city, state: fields.state, zip: fields.zip,
-        beds: fields.beds, baths: fields.baths, sqft: fields.sqft, dealType: mode
+        beds: fields.beds, baths: fields.baths, sqft: fields.sqft, dealType: mode,
+        // Form field values (income-property + residential fields) — MUST be sent to calc engine
+        askingPrice: fields.askingPrice, arv: fields.arv, rehab: fields.rehab,
+        grossIncome: fields.grossIncome, expenses: fields.expenses, expenseRatio: fields.expenseRatio,
+        totalUnits: fields.totalUnits, climateUnits: fields.climateUnits, netRentableSqft: fields.netRentableSqft,
+        occupancy: fields.occupancy, units: fields.units, noi: fields.noi,
+        purchase: fields.purchase, capRate: fields.capRate, yearBuilt: fields.yearBuilt, stories: fields.stories,
+        // MHP-specific
+        lots: fields.lots, lotRent: fields.lotRent, pohUnits: fields.pohUnits, pohRent: fields.pohRent,
+        // RV Park / IOS-specific
+        sites: fields.sites, siteRent: fields.siteRent, acres: fields.acres,
+        // Commercial-specific
+        leasableSqft: fields.leasableSqft
       }))
       const work = []
       const docCount = docs.length + (pasted ? 1 : 0)
