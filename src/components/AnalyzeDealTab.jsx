@@ -692,6 +692,17 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
 
       const extractedNorm = pullExtracted(orch.extracted)
 
+      // Auto-populate form from extracted data (address, city, state, zip)
+      if (extractedNorm) {
+        setFields(prev => ({
+          ...prev,
+          address: prev.address || extractedNorm.address || '',
+          city: prev.city || extractedNorm.address?.split(',')[1]?.trim() || '',
+          state: prev.state || extractedNorm.state || '',
+          zip: prev.zip || extractedNorm.zip || ''
+        }))
+      }
+
       // Auto-detect asset type from extracted data and set typeId.
       // Matches extractor asset_type to Baby Analyzer PROPERTY_TYPES.
       if (extractedNorm && extractedNorm.assetType) {

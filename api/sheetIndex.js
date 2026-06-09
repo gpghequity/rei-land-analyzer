@@ -29,6 +29,41 @@ function getTabForAssetType(assetType) {
   return mapping[String(assetType || '').toLowerCase()] || 'Properties';
 }
 
+// Auto-create missing tabs if they don't exist (fire-and-forget)
+async function ensureTabExists(sheets, tabName) {
+  const id = process.env.GOOGLE_SHEETS_ID;
+  if (!id || tabName === 'Properties') return; // Properties assumed to exist
+  try {
+    // Try a quick read to see if tab exists
+    await sheets.spreadsheets.values.get({
+      spreadsheetId: id, range: `'${tabName}'!A1`
+    });
+  } catch (e) {
+    // Tab doesn't exist, create it
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: id,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: { title: tabName }
+            }
+          }]
+        }
+      });
+      // Add header row to new tab
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: id,
+        range: `'${tabName}'!A1:ZZ1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [COLS] }
+      });
+    } catch (createErr) {
+      console.error(`Failed to create tab ${tabName}:`, createErr?.message);
+    }
+  }
+}
+
 const COLS = [
   'property_id', 'version', 'is_current', 'edited_on', 'edited_by', 'edit_reason',
   'address', 'city', 'state', 'zip', 'county', 'asset_type',
@@ -137,6 +172,9 @@ export async function writeProperty({ property, editedBy, editReason }) {
 
   // Route to asset-type-specific tab
   const tabName = getTabForAssetType(property.asset_type);
+
+  // Auto-create tab if it doesn't exist (fire-and-forget)
+  ensureTabExists(sheets, tabName).catch(() => {});
 
   const all = await readAllRows(sheets, tabName);
   if (all.error) return { ok: false, error: all.error };
