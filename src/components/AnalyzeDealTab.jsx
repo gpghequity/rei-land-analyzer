@@ -844,67 +844,52 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       setStep('Running Math Bible analysis…')
       let calc = null, head = {}, calcTypeUsed = null, matrix = null, noiBasis = null
 
-      // ── CRITICAL FIX: If user entered income but typeId is wrong, force it to income asset ──
-      const userEnteredIncome = num(calcFields.grossIncome) > 0 || num(calcFields.expenses) > 0
-      const useIncomeMatrix = isIncomeAsset(typeId) || userEnteredIncome
+      // ── SIMPLE FIX: If user entered income, ALWAYS compute NOI + matrix ──
+      const grossN = num(calcFields.grossIncome)
+      const expDollars = num(calcFields.expenses)
+      const expRatio = num(calcFields.expenseRatio)
+      const userHasIncome = grossN > 0 || expDollars > 0 || expRatio > 0
+      let matrixNOI = num(calcFields.noi)
 
-      // ── Income/NOI assets → standardized Financing Matrix (Math Bible engine) ──
-      if (useIncomeMatrix && (isIncomeAsset(typeId) || userEnteredIncome)) {
-        const grossN = num(calcFields.grossIncome)
-        const expDollars = num(calcFields.expenses)
-        const expRatio = num(calcFields.expenseRatio)
-        let matrixNOI = num(calcFields.noi)
-        // Determine asset type for income calculation (if typeId isn't already income)
-        const incomeTypeId = isIncomeAsset(typeId) ? typeId : 'self_storage' // default to storage if income entered but type wrong
-        if (matrixNOI > 0) {
-          noiBasis = num(fields.noi) ? 'User-entered NOI' : 'Broker/OM NOI (no override)'
+      // Compute NOI if user entered income (ignore typeId mismatch entirely)
+      if (userHasIncome && !matrixNOI) {
+        if (expDollars > 0) {
+          // User entered dollars: Income - Expenses
+          matrixNOI = Math.max(0, Math.round(grossN - expDollars))
+          noiBasis = `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
+        } else if (expRatio > 0) {
+          // User entered ratio: Income × (1 - ratio)
+          const er = expRatio / 100
+          matrixNOI = Math.round(grossN * (1 - Math.min(er, 0.95)))
+          noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(expRatio)}% expense ratio)`
         } else if (grossN > 0) {
-          // Expense ratio is a whole percent (41 → 0.41). An out-of-range value
-          // (e.g. 41000, dollars typed into the % field) is treated as unset so a
-          // typo can never drive NOI negative and break the matrix.
-          let er = (calcFields.expenseRatio !== '' && calcFields.expenseRatio != null) ? num(calcFields.expenseRatio) / 100 : null
-          if (er != null && (er < 0 || er > 1)) er = null
-          if (expDollars > 0) {
-            // Operator entered actual expense DOLLARS — the intuitive path.
-            if (incomeTypeId === 'self_storage') {
-              const sn = storageNOI(grossN, Math.min(0.95, expDollars / grossN))
-              matrixNOI = sn.noi
-              noiBasis = sn.floorBinds
-                ? `Gross $${grossN.toLocaleString()} − expenses (35% storage floor binds)`
-                : `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
-            } else {
-              matrixNOI = Math.max(0, Math.round(grossN - expDollars))
-              noiBasis = `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
-            }
-          } else if (incomeTypeId === 'self_storage') {
-            const sn = storageNOI(grossN, er || 0)
-            matrixNOI = sn.noi
-            noiBasis = sn.floorBinds
-              ? `Gross $${grossN.toLocaleString()} × (1 − 35% storage expense floor)`
-              : `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(sn.expenseRatio * 100)}% expense ratio)`
-          } else {
-            const erUsed = er != null ? er : 0.40
-            matrixNOI = Math.round(grossN * (1 - erUsed))
-            noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(erUsed * 100)}% expense ratio)`
-          }
+          // Only income, assume 40% expenses
+          matrixNOI = Math.round(grossN * 0.6)
+          noiBasis = `Gross $${grossN.toLocaleString()} × (1 − 40% assumed expenses)`
         }
-        if (matrixNOI > 0) {
-          try {
-            matrix = buildIncomeMatrix({ assetType: incomeTypeId, noi: matrixNOI })
-            calcTypeUsed = 'Math Bible income engine (financing matrix)'
-            head = {
-              noiUsed: matrixNOI,
-              estValue: matrix.summary.aggressiveValue,
-              maxOffer: matrix.summary.conservativeValue,
-              dscr: 1.25
-            }
-          } catch (e) {
-            setError(`Matrix build failed: ${e?.message || e}`)
-            setPhase('')
-            return
+      }
+
+      // Build matrix if NOI exists (from manual entry OR from calculation above)
+      if (matrixNOI > 0) {
+        try {
+          const assetTypeForMatrix = isIncomeAsset(typeId) ? typeId : 'self_storage'
+          matrix = buildIncomeMatrix({ assetType: assetTypeForMatrix, noi: matrixNOI })
+          calcTypeUsed = 'Math Bible income engine (financing matrix)'
+          head = {
+            noiUsed: matrixNOI,
+            estValue: matrix.summary.aggressiveValue,
+            maxOffer: matrix.summary.conservativeValue,
+            dscr: 1.25
           }
+        } catch (e) {
+          setError(`Matrix calculation failed: ${e?.message || e}`)
+          setPhase('')
+          return
         }
-      } else {
+      }
+
+      // Non-income assets (residential flip/rental, land, etc)
+      if (!matrix) {
         // Residential / IOS-land etc. → existing frozen /api/calc path.
         const calcPayload = type.buildCalc ? type.buildCalc(calcFields, mode) : null
         if (calcPayload) {
