@@ -844,19 +844,18 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       setStep('Running Math Bible analysis…')
       let calc = null, head = {}, calcTypeUsed = null, matrix = null, noiBasis = null
 
+      // ── CRITICAL FIX: If user entered income but typeId is wrong, force it to income asset ──
+      const userEnteredIncome = num(calcFields.grossIncome) > 0 || num(calcFields.expenses) > 0
+      const useIncomeMatrix = isIncomeAsset(typeId) || userEnteredIncome
+
       // ── Income/NOI assets → standardized Financing Matrix (Math Bible engine) ──
-      // ALWAYS log to verify code is running + check state
-      console.log('[BA analyze] typeId=', typeId, 'isIncome=', isIncomeAsset(typeId), 'calcFields income=', { grossIncome: calcFields.grossIncome, expenses: calcFields.expenses })
-      if (isIncomeAsset(typeId)) {
+      if (useIncomeMatrix && (isIncomeAsset(typeId) || userEnteredIncome)) {
         const grossN = num(calcFields.grossIncome)
         const expDollars = num(calcFields.expenses)
         const expRatio = num(calcFields.expenseRatio)
         let matrixNOI = num(calcFields.noi)
-        // DEBUG: log state if income provided but NOI calc fails
-        if ((grossN > 0 || expRatio > 0) && matrixNOI === 0) {
-          console.warn('[BA] Income asset with income but no NOI:', { grossN, expDollars, expRatio, calcFields })
-        }
-        console.log('[BA] After NOI calc:', { grossN, expDollars, matrixNOI })
+        // Determine asset type for income calculation (if typeId isn't already income)
+        const incomeTypeId = isIncomeAsset(typeId) ? typeId : 'self_storage' // default to storage if income entered but type wrong
         if (matrixNOI > 0) {
           noiBasis = num(fields.noi) ? 'User-entered NOI' : 'Broker/OM NOI (no override)'
         } else if (grossN > 0) {
@@ -867,7 +866,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
           if (er != null && (er < 0 || er > 1)) er = null
           if (expDollars > 0) {
             // Operator entered actual expense DOLLARS — the intuitive path.
-            if (typeId === 'self_storage') {
+            if (incomeTypeId === 'self_storage') {
               const sn = storageNOI(grossN, Math.min(0.95, expDollars / grossN))
               matrixNOI = sn.noi
               noiBasis = sn.floorBinds
@@ -877,7 +876,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
               matrixNOI = Math.max(0, Math.round(grossN - expDollars))
               noiBasis = `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
             }
-          } else if (typeId === 'self_storage') {
+          } else if (incomeTypeId === 'self_storage') {
             const sn = storageNOI(grossN, er || 0)
             matrixNOI = sn.noi
             noiBasis = sn.floorBinds
@@ -889,16 +888,20 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
             noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(erUsed * 100)}% expense ratio)`
           }
         }
-        console.log('[BA] Building matrix?', matrixNOI > 0, 'matrixNOI=', matrixNOI)
         if (matrixNOI > 0) {
-          console.log('[BA] YES — building matrix with NOI=', matrixNOI)
-          matrix = buildIncomeMatrix({ assetType: typeId, noi: matrixNOI })
-          calcTypeUsed = 'Math Bible income engine (financing matrix)'
-          head = {
-            noiUsed: matrixNOI,
-            estValue: matrix.summary.aggressiveValue,   // highest supportable (1.15)
-            maxOffer: matrix.summary.conservativeValue,  // prudent recommended (1.25 bank-only)
-            dscr: 1.25
+          try {
+            matrix = buildIncomeMatrix({ assetType: incomeTypeId, noi: matrixNOI })
+            calcTypeUsed = 'Math Bible income engine (financing matrix)'
+            head = {
+              noiUsed: matrixNOI,
+              estValue: matrix.summary.aggressiveValue,
+              maxOffer: matrix.summary.conservativeValue,
+              dscr: 1.25
+            }
+          } catch (e) {
+            setError(`Matrix build failed: ${e?.message || e}`)
+            setPhase('')
+            return
           }
         }
       } else {
