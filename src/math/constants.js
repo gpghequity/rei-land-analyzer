@@ -33,6 +33,24 @@ export function loadConstants() {
   flat.K_OWNER_IO     = 0.08
   flat.K_OWNER_AMORT  = annualLoanConstant(0.08, 25)
 
+  // Seller-finance constants (Math Bible group B financing)
+  flat.RATE_SELLER    = 0.05                                       // 5% seller note rate
+  flat.AMORT_SELLER   = 25                                         // 25-year amortization
+  flat.K_SELLER       = annualLoanConstant(flat.RATE_SELLER, flat.AMORT_SELLER)
+
+  // Closing costs and fees (equity requirement line items)
+  flat.WHOLESALE_FEE  = 10000                                      // $10k assignment fee
+  flat.BANK_POINTS_PCT = 0.01                                      // 1% lender points
+  flat.BANK_LENDER_FEES = 2500                                     // $2.5k flat lender fee
+  flat.LEGAL          = 3000                                       // $3k legal cost
+  flat.TITLE_PCT      = 0.005                                      // 0.5% title insurance
+  flat.ENVIRONMENTAL  = 500                                        // $500 environmental inspection
+  flat.APPRAISAL      = 600                                        // $600 appraisal
+  flat.SURVEY         = 800                                        // $800 survey
+  flat.INSURANCE_SETUP = 400                                       // $400 insurance setup
+  flat.PITI_RESERVE_MONTHS = 3                                     // 3 months PITI/tax reserve
+  flat.WORKING_CAPITAL_PCT = 0.10                                  // 10% working capital reserve
+
   return flat
 }
 
