@@ -1234,6 +1234,71 @@ function Results({ r }) {
         </>
       )}
 
+      {/* SIDE-BY-SIDE RESULTS COMPARISON — Manual vs Extracted */}
+      {r && r.fields && r.extracted && (
+        <div style={card}>
+          <h3 style={h3}>Analysis: Manual vs Extracted — Side-by-Side Results</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 16 }}>
+            {/* MANUAL SCENARIO */}
+            <div style={{ border: '1px solid #d4dae8', borderRadius: 6, padding: 12, background: '#fafbfc' }}>
+              <h4 style={{ margin: '0 0 12px', color: '#0A0F2C', fontWeight: 700 }}>📝 MANUAL ENTRY (What You Typed)</h4>
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                {r.fields.grossIncome ? <div><strong>Income:</strong> {money(r.fields.grossIncome)}</div> : null}
+                {r.fields.expenses ? <div><strong>Expenses:</strong> {money(r.fields.expenses)}</div> : null}
+                {r.headline?.noiUsed != null ? <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e5e7eb' }}><strong>NOI Result:</strong> <span style={{ color: '#2F7A40', fontWeight: 700 }}>{money(r.headline.noiUsed)}</span></div> : null}
+                {r.headline?.maxOffer != null ? <div><strong>Offer Result:</strong> <span style={{ color: '#2F7A40', fontWeight: 700 }}>{money(r.headline.maxOffer)}</span></div> : null}
+                {r.calc?.capRate != null ? <div><strong>Cap Rate:</strong> {pct(r.calc.capRate)}</div> : null}
+              </div>
+            </div>
+
+            {/* EXTRACTED SCENARIO */}
+            <div style={{ border: '1px solid #d4dae8', borderRadius: 6, padding: 12, background: '#fafbfc' }}>
+              <h4 style={{ margin: '0 0 12px', color: '#0A0F2C', fontWeight: 700 }}>📄 EXTRACTED (What Docs Say)</h4>
+              <div style={{ fontSize: 13, lineHeight: 1.8 }}>
+                {r.extracted?.grossIncome ? <div><strong>Income:</strong> {money(r.extracted.grossIncome)}</div> : <div style={{ color: '#9ca3af' }}>—</div>}
+                {r.extracted?.expenses ? <div><strong>Expenses:</strong> {money(r.extracted.expenses)}</div> : <div style={{ color: '#9ca3af' }}>—</div>}
+                {r.extracted?.brokerNOI != null ? <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #e5e7eb' }}><strong>NOI Result:</strong> <span style={{ color: '#2F7A40', fontWeight: 700 }}>{money(r.extracted.brokerNOI)}</span></div> : <div style={{ color: '#9ca3af' }}>— (not extracted)</div>}
+                {r.extracted?.asking != null ? <div><strong>Asking:</strong> {money(r.extracted.asking)}</div> : null}
+              </div>
+            </div>
+          </div>
+
+          {/* DIFFERENCES & FLAGS */}
+          {(r.fields.grossIncome || r.extracted?.grossIncome) && (r.fields.grossIncome !== r.extracted?.grossIncome) && (
+            <div style={{ background: '#fff3cd', border: '1px solid #ffc107', borderRadius: 6, padding: 12, marginBottom: 16 }}>
+              <h4 style={{ margin: '0 0 8px', color: '#856404', fontWeight: 700 }}>⚠️ DIFFERENCES DETECTED</h4>
+              <div style={{ fontSize: 13, color: '#856404', lineHeight: 1.6 }}>
+                {r.fields.grossIncome && r.extracted?.grossIncome && (
+                  <div>
+                    <strong>Income:</strong> Manual ${r.fields.grossIncome.toLocaleString()} vs Extracted ${r.extracted.grossIncome.toLocaleString()}
+                    <br />
+                    <span style={{ fontSize: 12 }}>Difference: ${Math.abs(r.fields.grossIncome - r.extracted.grossIncome).toLocaleString()}
+                    ({((Math.abs(r.fields.grossIncome - r.extracted.grossIncome) / r.fields.grossIncome) * 100).toFixed(1)}%)
+                    </span>
+                    <br />
+                    <span style={{ fontSize: 12, marginTop: 4, display: 'block' }}>💡 <strong>QUESTION:</strong> Which OM/rent roll is current? Check document date vs. current year.</span>
+                  </div>
+                )}
+                {r.fields.expenses && r.extracted?.expenses && r.fields.expenses !== r.extracted.expenses && (
+                  <div style={{ marginTop: 8 }}>
+                    <strong>Expenses:</strong> Manual ${r.fields.expenses.toLocaleString()} vs Extracted ${r.extracted.expenses.toLocaleString()}
+                    <br />
+                    <span style={{ fontSize: 12 }}>💡 <strong>QUESTION:</strong> Verify which expense breakdown (T12, P&L, or operator estimate) is most recent.</span>
+                  </div>
+                )}
+                {r.headline?.noiUsed != null && r.extracted?.brokerNOI != null && r.headline.noiUsed !== r.extracted.brokerNOI && (
+                  <div style={{ marginTop: 8, fontWeight: 700, color: '#B23030' }}>
+                    <strong>NOI CONFLICT:</strong> Manual ${r.headline.noiUsed.toLocaleString()} vs Extracted ${r.extracted.brokerNOI.toLocaleString()}
+                    <br />
+                    <span style={{ fontSize: 12, fontWeight: 400 }}>💡 This cascades to offer. Recommend: verify with broker before making offer.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* DATA RECONCILIATION — All fields: manual vs extracted */}
       {r && r.fields && (
         <div style={card}>
