@@ -13,14 +13,14 @@ import { loadConstants } from './constants.js'
 
 export function storageNOI(grossDollarsIn, sellerStatedExpensePct) {
   const C = loadConstants()
-  const expenseRatio = Math.max(sellerStatedExpensePct || 0, C.STORAGE_EXPENSE_FLOOR)
+  const expenseRatio = Math.max(sellerStatedExpensePct || 0, C.EXPENSE_FLOOR)
   const expenses = grossDollarsIn * expenseRatio
   return {
     grossDollarsIn,
     expenseRatio,
     expenses,
     noi: grossDollarsIn - expenses,
-    floorBinds: expenseRatio === C.STORAGE_EXPENSE_FLOOR
+    floorBinds: expenseRatio === C.EXPENSE_FLOOR
   }
 }
 
