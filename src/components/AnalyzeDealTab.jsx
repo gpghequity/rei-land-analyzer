@@ -642,14 +642,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [portfolio, setPortfolio] = useState(false)
   const [rehabCondition, setRehabCondition] = useState(0) // manual condition → rehab $ (your numbers)
   const [rehabDetail, setRehabDetail] = useState(null)    // { national: {area, psf, tier, total}, ... }
-  const [fields, setFields] = useState({
-    address: '', city: '', state: '', zip: '', user: '', contact: '',
-    askingPrice: '', arv: '', rehab: '', grossIncome: '', expenses: '', expenseRatio: '', noi: '',
-    purchase: '', capRate: '', yearBuilt: '', stories: '', beds: '', baths: '', sqft: '', units: '',
-    totalUnits: '', climateUnits: '', netRentableSqft: '', occupancy: '',
-    lots: '', lotRent: '', pohUnits: '', pohRent: '',
-    sites: '', siteRent: '', acres: '', leasableSqft: ''
-  })
+  const [fields, setFields] = useState({ address: '', city: '', state: '', zip: '' })
   const [docs, setDocs] = useState([])
   const [photos, setPhotos] = useState([])
   const [pastedText, setPastedText] = useState('') // dump an agent email / notes here
@@ -657,6 +650,9 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [step, setStep] = useState('')
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+
+  // NOTE: Removed auto-clear on typeId change — was potentially interfering with form state updates
+  // User can manually select new type, form keeps old values (user can delete if needed)
 
   const type = getType(typeId)
   const isPortfolio = portfolio && typeId !== 'ios_land'
@@ -678,6 +674,13 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   async function analyze() {
     setError(null); setResult(null)
     if (!fields.address) { setError('Enter a property address.'); return }
+
+    // DIAGNOSTIC: If user selected income asset but no income in state, tell them exactly what we're seeing
+    if (isIncomeAsset(typeId) && !num(fields.grossIncome) && !num(fields.expenses) && !num(fields.noi)) {
+      setError(`DIAGNOSTIC: Selected ${getType(typeId).label} but no income found in form state. Form shows income but state is empty. This is a form-state sync bug. Fields in state: ${JSON.stringify(fields)}`)
+      return
+    }
+
     setPhase('running')
     try {
       // 1) Orchestrate: store uploads + call extractor / photo / comps server-side.
@@ -801,7 +804,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
 
       // 2) Compute headline via existing bible math (/api/calc). User fields win; extracted fills gaps.
       // CRITICAL: calcFields must include manual form values even if extraction fails.
-      // Make a copy of the current form state, THEN merge extraction gaps.
+      // Line 792 ensures this: calcFields = {...fields} copies the form state BEFORE extraction fallback.
       const calcFields = { ...fields }
       // Only merge extracted data into gaps — never overwrite manual user entry.
       if (extractedNorm) {
@@ -851,29 +854,38 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       setStep('Running Math Bible analysis…')
       let calc = null, head = {}, calcTypeUsed = null, matrix = null, noiBasis = null
 
-      // ── SIMPLE FIX: If user entered income, ALWAYS compute NOI + matrix ──
-      // READ DIRECTLY FROM FORM STATE, NOT JUST calcFields (defensive)
-      const grossN = num(calcFields.grossIncome || fields.grossIncome)
-      const expDollars = num(calcFields.expenses || fields.expenses)
-      const expRatio = num(calcFields.expenseRatio || fields.expenseRatio)
-      const userHasIncome = grossN > 0 || expDollars > 0 || expRatio > 0
-      let matrixNOI = num(calcFields.noi || fields.noi)
+      // ── FORCED: If user entered income, compute it. No conditions. ──
+      const grossN = num(calcFields.grossIncome)
+      const expDollars = num(calcFields.expenses)
+      const expRatio = num(calcFields.expenseRatio)
+      let matrixNOI = num(calcFields.noi)
 
-      // Compute NOI if user entered income (ignore typeId mismatch entirely)
-      if (userHasIncome && !matrixNOI) {
+      // If no explicit NOI but user entered income, compute it
+      if (!matrixNOI && grossN > 0) {
         if (expDollars > 0) {
-          // User entered dollars: Income - Expenses
-          matrixNOI = Math.max(0, Math.round(grossN - expDollars))
-          noiBasis = `Gross $${grossN.toLocaleString()} − expenses $${expDollars.toLocaleString()}`
+          // Income - Expenses, respecting type-specific rules
+          if (typeId === 'self_storage') {
+            const sn = storageNOI(grossN, Math.min(0.95, expDollars / grossN))
+            matrixNOI = sn.noi
+            noiBasis = sn.floorBinds
+              ? `Gross $${grossN.toLocaleString()} − expenses (35% floor)`
+              : `Gross $${grossN.toLocaleString()} − $${expDollars.toLocaleString()} expenses`
+          } else {
+            matrixNOI = Math.max(0, Math.round(grossN - expDollars))
+            noiBasis = `$${grossN.toLocaleString()} − $${expDollars.toLocaleString()} = NOI`
+          }
         } else if (expRatio > 0) {
-          // User entered ratio: Income × (1 - ratio)
-          const er = expRatio / 100
-          matrixNOI = Math.round(grossN * (1 - Math.min(er, 0.95)))
-          noiBasis = `Gross $${grossN.toLocaleString()} × (1 − ${Math.round(expRatio)}% expense ratio)`
-        } else if (grossN > 0) {
-          // Only income, assume 40% expenses
-          matrixNOI = Math.round(grossN * 0.6)
-          noiBasis = `Gross $${grossN.toLocaleString()} × (1 − 40% assumed expenses)`
+          // Income × (1 - ratio)
+          const ratio = expRatio / 100
+          matrixNOI = typeId === 'self_storage'
+            ? storageNOI(grossN, ratio).noi
+            : Math.round(grossN * (1 - Math.min(ratio, 0.95)))
+          noiBasis = `$${grossN.toLocaleString()} × (1 − ${expRatio}%)`
+        } else {
+          // Income only: assume 35% (storage) or 40% (other)
+          const ratio = typeId === 'self_storage' ? 0.35 : 0.40
+          matrixNOI = Math.round(grossN * (1 - ratio))
+          noiBasis = `$${grossN.toLocaleString()} × (1 − ${Math.round(ratio * 100)}% assumed)`
         }
       }
 
@@ -917,8 +929,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
       const hasMath = Boolean(matrix) || Boolean(calc)
 
       // 3) Recommendation (transparent rule).
-      // READ DIRECTLY FROM FORM STATE FOR INCOME DETECTION (defensive)
-      const manualIncome = num(fields.grossIncome) > 0 || num(fields.expenses) > 0 || num(fields.expenseRatio) > 0
+      const manualIncome = num(calcFields.grossIncome) > 0 || num(calcFields.expenses) > 0 || num(calcFields.expenseRatio) > 0
       const rec = recommend({
         asking: calcFields.askingPrice, maxOffer: head.maxOffer, estValue: head.estValue,
         dscrPass: head.dscrPass, typeImplemented: type.implemented, hasMath,
