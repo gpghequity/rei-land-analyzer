@@ -58,9 +58,41 @@ export async function analyzeDeal(req, res) {
     const photoFindings = photos.length ? await extractPhotosCore(photos, { manualSqft: sqft, propertyAddress: address }) : null;
     const comps = await enrichCore({ address, city, state, zip, beds, baths, sqft, assetType: propertyType });
 
-    // 4) Store raw findings as JSON artifacts
+    // 4a) EVALUATOR INTEGRATION: Call risk analysis service with enriched data
+    let riskAnalysis = null;
+    try {
+      const evalPayload = {
+        babyAnalyzerOutput: {
+          inputs: {
+            occupancy: meta.occupancy || 0,
+            economicOccancy: meta.economicOccupancy || meta.economicOccancy || 0,
+            noi: meta.noi || 0,
+            capRate: meta.capRate || 0
+          },
+          extracted: extracted ? { economicOccupancy: extracted.economicOccupancy } : {}
+        },
+        demographic: comps?.demographic || {},
+        crime: comps?.crime || {},
+        flood: comps?.flood || {},
+        docs: docs.map(d => d.originalname || 'doc')
+      };
+      const evalRes = await fetch('https://rei-deal-risk-intelligence-production.up.railway.app/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(evalPayload),
+        timeout: 10000
+      });
+      if (evalRes.ok) {
+        riskAnalysis = await evalRes.json();
+      }
+    } catch (evalErr) {
+      console.warn('[EVALUATOR] Risk analysis failed (non-blocking):', evalErr.message);
+      // Risk analysis is optional — don't block deal analysis
+    }
+
+    // 4b) Store raw findings as JSON artifacts (including risk analysis)
     if (folderId) {
-      const artifacts = { 'extracted.json': extracted, 'photos.json': photoFindings, 'comps.json': comps };
+      const artifacts = { 'extracted.json': extracted, 'photos.json': photoFindings, 'comps.json': comps, 'risk.json': riskAnalysis };
       for (const [name, value] of Object.entries(artifacts)) {
         if (value == null) continue;
         const u = await uploadFile(folderId, { name, mimeType: 'application/json', body: JSON.stringify(value, null, 2) });
@@ -75,6 +107,7 @@ export async function analyzeDeal(req, res) {
       extracted,
       photos: photoFindings,
       comps,
+      risk: riskAnalysis,
       uploadsStored: { docs: docs.length, photos: photos.length },
       persistError: persistErrors.length ? persistErrors.join('; ') : null
     });
