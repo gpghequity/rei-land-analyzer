@@ -66,35 +66,61 @@ export async function analyzeDeal(req, res) {
         dealType: meta.propertyType || 'unknown',
         babyAnalyzerOutput: {
           inputs: {
-            occupancy: meta.occupancy || 0,
-            economicOccancy: meta.economicOccupancy || meta.economicOccancy || 0,
-            noi: meta.noi || 0,
-            capRate: meta.capRate || 0
+            occupancy: meta.occupancy || extracted?.occupancy || 0,
+            economicOccancy: meta.economicOccupancy || extracted?.economicOccupancy || 0,
+            noi: meta.noi || extracted?.brokerNOI || 0,
+            capRate: meta.capRate || 0,
+            units: meta.totalUnits || extracted?.units || 0,
+            sqft: meta.netRentableSqft || extracted?.sqft || 0
           },
-          extracted: extracted ? { economicOccupancy: extracted.economicOccupancy } : {},
+          extracted: extracted ? {
+            economicOccupancy: extracted.economicOccupancy,
+            occupancy: extracted.occupancy,
+            noi: extracted.brokerNOI,
+            units: extracted.units,
+            redFlags: extracted.redFlags
+          } : {},
           isIncome: meta.propertyType && ['storage', 'multifamily', 'commercial', 'mhp', 'rv_park', 'ios'].includes(meta.propertyType)
         },
         demographic: {
           currentPopulation: comps?.demographics?.population,
           medianIncome: comps?.demographics?.medianIncome,
           povertyRate: comps?.demographics?.povertyRate,
+          avgHouseholdSize: null,
           priorPopulation: null,
-          projectedPopulation: null
+          projectedPopulation: null,
+          householdGrowth: null
         },
-        supply: comps?.avm ? { saturation: 'Adequate' } : {},
-        demand: comps?.avm ? { overall: 'Average' } : {},
-        crime: comps?.crime ? { riskLevel: 'low', score: comps.crime.score, label: comps.crime.label } : {},
+        supply: {
+          saturation: comps?.avm ? 'Adequate' : 'Unknown',
+          existingSupply: null,
+          underConstruction: null,
+          sfPerCapita3Mile: null
+        },
+        demand: {
+          overall: comps?.avm?.rent_estimate ? 'Average' : 'Unknown',
+          housing: null,
+          occupancy: meta.occupancy || extracted?.occupancy
+        },
+        crime: comps?.crime ? {
+          riskLevel: comps.crime.score > 60 ? 'high' : comps.crime.score > 40 ? 'elevated' : 'low',
+          score: comps.crime.score,
+          label: comps.crime.label
+        } : {},
         flood: comps?.flood || {},
         environmental: {},
         housing: {},
         commercial: {},
         employment: {},
-        income: { medianHouseholdIncome: comps?.demographics?.medianIncome },
+        income: {
+          medianHouseholdIncome: comps?.demographics?.medianIncome,
+          growthRate: null
+        },
         docs: docs.map(d => d.originalname || 'doc'),
         sellerClaims: {
-          rentGrowth: meta.capRate > 0,
-          occupancy: meta.occupancy > 80,
-          marketGrowth: comps?.demographic?.currentPopulation > comps?.demographic?.priorPopulation,
+          rentGrowth: (meta.capRate > 0) || (extracted?.brokerNOI > 0),
+          occupancy: (meta.occupancy > 80) || (extracted?.occupancy > 80),
+          marketGrowth: false,
           supplyConstrained: false
         }
       };
