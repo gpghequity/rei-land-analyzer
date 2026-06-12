@@ -99,6 +99,10 @@ export async function analyzeDeal(req, res) {
         },
         demand: {
           overall: comps?.avm?.rent_estimate ? 'Average' : 'Unknown',
+          population: 'unknown',
+          household: 'unknown',
+          employment: 'unknown',
+          business: 'unknown',
           housing: null,
           occupancy: meta.occupancy || extracted?.occupancy
         },
