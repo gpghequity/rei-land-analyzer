@@ -650,6 +650,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
   const [step, setStep] = useState('')
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
+  const [manualRehab, setManualRehab] = useState('')
 
   // NOTE: Removed auto-clear on typeId change — was potentially interfering with form state updates
   // User can manually select new type, form keeps old values (user can delete if needed)
@@ -1127,8 +1128,7 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
             units={fields.units}
             onResult={(total, detail) => {
               setRehabCondition(total)
-              // National-average cross-check from the benchmark constant (a small
-              // snapshot, not the rehab tool) so the report keeps that column.
+              setManualRehab('')
               const area = num(fields.sqft) || 0
               const national = area > 0
                 ? { area, psf: Math.round(NATIONAL_PSF.medium_rehab * REGIONAL_ADJ), total: Math.round(area * NATIONAL_PSF.medium_rehab * REGIONAL_ADJ), tier: 'medium' }
@@ -1136,6 +1136,22 @@ export default function AnalyzeDealTab({ sharedUrlState, deepUrlState }) {
               setRehabDetail({ ...detail, national })
             }}
           />
+          <div style={{ marginTop: 12, padding: '8px', border: '1px solid #C8851A', borderRadius: 6, background: '#fff7e6' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 6 }}>Or enter rehab cost manually:</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="number" value={manualRehab} onChange={e => setManualRehab(e.target.value)} placeholder="Enter total" style={{ flex: 1, padding: '6px', border: '1px solid #C8851A', borderRadius: 4, fontSize: 12 }} />
+              <button type="button" onClick={() => {
+                const val = num(manualRehab)
+                if (val > 0) {
+                  setRehabCondition(val)
+                  const area = num(fields.sqft) || 0
+                  const national = area > 0 ? { area, psf: Math.round(NATIONAL_PSF.medium_rehab * REGIONAL_ADJ), total: Math.round(area * NATIONAL_PSF.medium_rehab * REGIONAL_ADJ), tier: 'medium' } : null
+                  setRehabDetail({ breakdown: [], national })
+                  setManualRehab('')
+                }
+              }} style={{ padding: '6px 12px', background: '#C8851A', color: '#fff', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Use</button>
+            </div>
+          </div>
         </div>
       )}
 
