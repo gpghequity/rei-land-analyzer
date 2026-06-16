@@ -1616,8 +1616,8 @@ function Results({ r }) {
           <p style={srcStyle}>
             {r.rehabUsed != null
               ? `Offer math used ${money(r.rehabUsed)} (your Rehab Calc estimates).`
-              : ‘Enter property condition above (or upload photos) to drive the rehab number into the offer.’}
-            {‘ ‘}Line-by-line breakdown shows what you selected in Rehab Calc by system and condition. National per-system benchmarks pending (Remodeling Magazine data).
+              : "Enter property condition above (or upload photos) to drive the rehab number into the offer."}
+            {" "}Line-by-line breakdown shows what you selected in Rehab Calc by system and condition. National per-system benchmarks pending (Remodeling Magazine data).
           </p>
 
           {/* Per-line: human condition + $ (your numbers) vs photo-assessed condition */}
@@ -1625,15 +1625,16 @@ function Results({ r }) {
             <details style={{ marginTop: 8 }}>
               <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Line-by-line — your condition &amp; $ vs the photo read</summary>
               <div style={{ overflowX: 'auto', marginTop: 6 }}>
-                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 460 }}>
-                  <thead><tr>{['System', 'Your condition', 'Your $'].map((hh, i) => (
-                    <th key={i} style={{ padding: '5px 8px', background: '#1E2A45', color: '#fff', fontSize: 11, textAlign: i === 0 ? 'left' : 'right' }}>{hh}</th>
+                <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 600 }}>
+                  <thead><tr>{['System', 'Your condition', 'Calculation', 'Your $'].map((hh, i) => (
+                    <th key={i} style={{ padding: '5px 8px', background: '#1E2A45', color: '#fff', fontSize: 11, textAlign: i === 0 ? 'left' : i === 3 ? 'right' : 'center' }}>{hh}</th>
                   ))}</tr></thead>
                   <tbody>
                     {r.rehabBreakdown.filter(li => li.id !== 'holding').map((li, i) => (
                       <tr key={li.id} style={{ background: i % 2 ? '#f7f9fd' : '#fff' }}>
                         <td style={{ padding: '5px 8px', fontWeight: 600 }}>{li.label}</td>
-                        <td style={{ padding: '5px 8px', textAlign: 'right' }}>{li.condition}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'center' }}>{li.condition}</td>
+                        <td style={{ padding: '5px 8px', textAlign: 'center', fontSize: 12, color: '#666', fontFamily: 'monospace' }}>{li.breakdown || '—'}</td>
                         <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 600 }}>{money(li.total)}</td>
                       </tr>
                     ))}

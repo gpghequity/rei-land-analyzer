@@ -17,7 +17,10 @@
   totalRehab: number,      // Finite number, required
   grandTotal: number,      // Finite number, required
   holdingCost: number,     // Optional (defaults to 0)
-  lineItems: [...],        // Optional array
+  lineItems: [             // Optional array
+    { id, label, condition, total, breakdown }
+    // breakdown: e.g. "1,600 sqft × $9.38 × 80% = $15,000"
+  ],
   sqft: number,            // Optional
   address: string          // Optional
 }
