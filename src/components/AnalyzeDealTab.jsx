@@ -329,7 +329,7 @@ function CompEvidence({ subject, comps }) {
 function RehabEmbed({ mode, address, sqft, units, onResult }) {
   const [src, setSrc] = useState('')
   const build = () => {
-    const siloMode = mode === 'storage' ? 'storage' : 'residential'
+    const siloMode = mode || 'residential'
     const p = new URLSearchParams({ embed: '1', mode: siloMode })
     if (address) p.set('address', address)
     if (num(sqft)) p.set('sqft', String(num(sqft)))
