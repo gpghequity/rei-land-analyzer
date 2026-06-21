@@ -34,7 +34,7 @@ export default function App() {
 
   // Keep document title in sync with the active tab.
   useEffect(() => {
-    document.title = `Baby Analyzer — ${TABS.find((t) => t.id === activeTab)?.label || ''}`
+    document.title = `Land Analyzer — ${TABS.find((t) => t.id === activeTab)?.label || ''}`
   }, [activeTab])
 
   const ActiveComponent = (TABS.find((t) => t.id === activeTab) || TABS[0]).component
@@ -50,8 +50,8 @@ export default function App() {
   return (
     <div className="page">
       <header className="no-print">
-        <h1>REI Baby Analyzer</h1>
-        <p className="sub">Operator-grade pre-LOI deal analysis · v{VERSION}</p>
+        <h1>REI Land Analyzer</h1>
+        <p className="sub">Land and IOS property analysis · v{VERSION}</p>
       </header>
 
       <nav className="no-print">
@@ -75,8 +75,8 @@ export default function App() {
       </main>
 
       <footer>
-        <div className="footer-copy">© 2026 Projects with a Purpose LLC · Powered by REI Homepage</div>
-        <div>REI Baby Analyzer v{VERSION} · Released {BUILD_DATE}</div>
+        <div className="footer-copy">© 2026 Projects with a Purpose LLC · Powered by REI Platform</div>
+        <div>REI Land Analyzer v{VERSION} · Released {BUILD_DATE}</div>
         <div>Math Bible v3.1 (Storage · Residential · MF 1–19 / 20+ tiers · Kicker · Sunset · Ramp) + Fast Calc V2.6 (MHP) + 7 Alt Exit Strategies + Land/IOS intake — drift-tolerant.</div>
         <div className="footer-disclaimer">Estimates only. Operator assumes all underwriting and decision responsibility. Verify numbers independently before any offer or transaction.</div>
       </footer>
