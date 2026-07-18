@@ -1,20 +1,26 @@
 // PORTED FROM docs/COMMERCIAL_BRIEF_V1.md (V1 spec) on 2026-05-13
 // V1 scope: current contract rent only, single $/SF reserves, V2 deferred per brief.
 //
-// Self-contained per the platform isolation rule: own constants, own
-// annualLoanConstant, own helpers. No imports from storage.js / mhp.js /
-// residential.js. Drift is acceptable per the platform's bulletproof-
-// modularity rule.
+// Self-contained (own annualLoanConstant + helpers, no cross-tab math imports).
+//
+// NOTE (2026-07-16): the old header here authorized "drift is acceptable per the
+// platform's bulletproof-modularity rule." That written policy WAS the root cause —
+// it licensed these defaults to diverge from the Bible (7%/30yr, seller 6%/20yr),
+// an ~8.6% systematic overpay on every commercial deal. That policy is removed.
+// The UI-seed defaults below are corrected to the Bible (COMMERCIAL.mortgageRate
+// 7.25% / amortizationYears 25; seller 5%/25yr) so a form left untouched matches
+// the Bible. The live income-property pricing path (analyze/incomeMatrix.js) reads
+// COMMERCIAL.* from the live Bible directly.
 
-// ── Lender + reserve defaults (all user-overridable in UI) ─────────────
-export const DEFAULT_DSCR = 1.25
-export const DEFAULT_LENDER_RATE = 0.07
-export const DEFAULT_LENDER_AM_YEARS = 30
-export const DEFAULT_LENDER_TERM_YEARS = 5
-export const DEFAULT_SELLER_RATE = 0.06
-export const DEFAULT_SELLER_AM_YEARS = 20
-export const DEFAULT_COLLECTION_LOSS = 0.02
-export const DEFAULT_PROP_MGMT_PCT = 0.05
+// ── Lender + reserve defaults (all user-overridable in UI; Bible-matched) ──
+export const DEFAULT_DSCR = 1.25              // COMMERCIAL.dscr.standard
+export const DEFAULT_LENDER_RATE = 0.0725     // COMMERCIAL.mortgageRate (was 0.07)
+export const DEFAULT_LENDER_AM_YEARS = 25      // COMMERCIAL.amortizationYears (was 30)
+export const DEFAULT_LENDER_TERM_YEARS = 5     // COMMERCIAL.lenderTermYears
+export const DEFAULT_SELLER_RATE = 0.05        // STORAGE.sellerFinance.rate (was 0.06)
+export const DEFAULT_SELLER_AM_YEARS = 25      // STORAGE.sellerFinance.amortYears (was 20)
+export const DEFAULT_COLLECTION_LOSS = 0.02    // COMMERCIAL.collectionLossPct
+export const DEFAULT_PROP_MGMT_PCT = 0.05      // COMMERCIAL.propMgmtPctDefault
 
 export const DEFAULT_TI_LC_PSF = 0.75
 export const DEFAULT_CAPEX_PSF = 0.30

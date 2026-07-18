@@ -23,20 +23,23 @@ const INITIAL = {
     acc[k] = { mode: 'tenant-direct', costAnnual: '', recoveryPct: '' }
     return acc
   }, {}),
-  // Assumptions
-  dscr: '1.25',
-  seniorRate: '0.075',
-  seniorAmort: '22',
-  seniorLtv: '0.75',
-  sellerFiRate: '0.05',
-  sellerFiAmort: '25',
-  sellerFiPct: '1.0',
-  managementPct: '0.07',
-  buyerClosingCostsPct: '0.03',
-  bankPointsPct: '0.01',
-  lenderFeesPct: '0.005',
-  appraisalFee: '5000',
-  environmentalFee: '5000'
+  // Assumptions — Bible-matched defaults (MHP.* + CLOSING_COSTS.*). These set the
+  // senior loan constant, so they move every max-purchase; corrected 2026-07-16
+  // from the divergent 0.075/22yr, 3% closing, 0.5% lender fees, $5k appraisal,
+  // $5k environmental to the Bible's 0.0725/25yr, 2%, 1%, $4k, $3.5k.
+  dscr: '1.25',              // MHP.dscr
+  seniorRate: '0.0725',      // MHP.mortgageRate (was 0.075)
+  seniorAmort: '25',         // MHP.amortizationYears (was 22)
+  seniorLtv: '0.75',         // MHP.ltv
+  sellerFiRate: '0.05',      // MHP.sellerFi.rate
+  sellerFiAmort: '25',       // MHP.sellerFi.amortYears
+  sellerFiPct: '1.0',        // MHP.sellerFi.pct
+  managementPct: '0.07',     // MHP.managementPct
+  buyerClosingCostsPct: '0.02', // CLOSING_COSTS.buyerClosingCostsPct (was 0.03)
+  bankPointsPct: '0.01',     // CLOSING_COSTS.bankPointsPct
+  lenderFeesPct: '0.01',     // CLOSING_COSTS.lenderFeesPct (was 0.005)
+  appraisalFee: '4000',      // CLOSING_COSTS.appraisalFee (was 5000)
+  environmentalFee: '3500'   // CLOSING_COSTS.environmentalFee (was 5000)
 }
 
 // Accepts urlState + sharedUrlState props for forward compat with App.jsx;

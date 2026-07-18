@@ -125,12 +125,20 @@ export const SYSTEMS_BY_MODE = {
   commercial: COMMERCIAL_SYSTEMS
 };
 
-// National-average rehab benchmark, $/sf by overall condition tier. Source:
-// rei-data-enrichment /api/rehab-benchmark (Remodeling Magazine + HomeAdvisor,
-// national median). This drives the "national averages" total shown beside
-// Steve's line-item engine total. mid-Atlantic regional ≈ national × 1.07.
-export const NATIONAL_PSF = { move_in: 8, light_rehab: 22, medium_rehab: 45, heavy_rehab: 80, studs: 130 };
-export const REGIONAL_ADJ = 1.07; // mid-Atlantic (PA)
+// RETIRED 2026-07-16 — divergent live table with NO Bible authority.
+// This national-average $/SF table {8, 22, 45, 80, 130} is the same one
+// bible-reader.js records as "intentionally REMOVED" as divergent. It has no home
+// in the live Bible (there is no national-benchmark section), and the platform
+// rule is: read the Bible or show nothing — never a fabricated number.
+//
+// It is NEUTERED to zeros so the "national averages" reference column produces no
+// fabricated figure (renders $0 / no benchmark) rather than a divergent one, and
+// never NaN. LOGGED FOR STEVE: decide whether to (a) authorize a national-benchmark
+// section in the Bible, or (b) remove the national-average comparison feature.
+// Until then this column is intentionally blank.
+export const NATIONAL_PSF = { move_in: 0, light_rehab: 0, medium_rehab: 0, heavy_rehab: 0, studs: 0 };
+export const NATIONAL_PSF_RETIRED = true;
+export const REGIONAL_ADJ = 1.07; // mid-Atlantic (PA) — only affects the retired benchmark
 
 export const OVERALL_TIERS = [
   { id: 'move_in', label: 'Move-in ready' },

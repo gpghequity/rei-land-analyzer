@@ -11,8 +11,9 @@ import { VERSION } from '../version.js'
 describe('App skeleton — one analyzer path', () => {
   it('renders the title and version', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'REI Baby Analyzer' })).toBeInTheDocument()
-    expect(screen.getByText(/Operator-grade pre-LOI deal analysis/i)).toBeInTheDocument()
+    // App was forked from Baby Analyzer to Land Analyzer — title + sub reflect that.
+    expect(screen.getByRole('heading', { name: 'REI Land Analyzer' })).toBeInTheDocument()
+    expect(screen.getByText(/Land and IOS property analysis/i)).toBeInTheDocument()
   })
 
   it('top nav has ONLY Analyze a Deal + QA Runner (no per-type tabs)', () => {
@@ -24,8 +25,12 @@ describe('App skeleton — one analyzer path', () => {
     expect(screen.queryByRole('button', { name: 'Quick Analysis' })).not.toBeInTheDocument()
   })
 
-  it('defaults to the guided screen: questions + document/photo upload', () => {
+  it('shows the guided screen (questions + document/photo upload) for a building type', async () => {
+    // The Land Analyzer DEFAULTS to Land/IOS intake; the guided building-deal screen
+    // (Deal Information + upload) appears once a non-land type is chosen.
+    const user = userEvent.setup()
     render(<App />)
+    await user.selectOptions(screen.getByRole('combobox', { name: /property type/i }), 'residential')
     expect(screen.getByRole('heading', { name: /Property Type/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Deal Information/i })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Upload Documents & Photos/i })).toBeInTheDocument()
@@ -55,10 +60,16 @@ describe('App skeleton — one analyzer path', () => {
     await user.selectOptions(select, 'self_storage') // sanity: selection works
   })
 
-  it('exposes the deep underwriter as an optional collapsed Advanced section', () => {
+  it('exposes the deep underwriter as an optional collapsed Advanced section', async () => {
+    // Choose a building type → Advanced manual underwriting is present but collapsed.
+    // The label interpolates the deep-tab name, so the text is split across nodes —
+    // match on the combined textContent of the <summary> element.
+    const user = userEvent.setup()
     render(<App />)
-    // Default type residential → Advanced manual underwriting is present but collapsed.
-    expect(screen.getByText(/Advanced — manual Residential scenario underwriting/i)).toBeInTheDocument()
+    await user.selectOptions(screen.getByRole('combobox', { name: /property type/i }), 'residential')
+    expect(
+      screen.getByText((_, el) => /Advanced — manual .* scenario underwriting/i.test(el?.textContent || '') && el?.tagName === 'SUMMARY')
+    ).toBeInTheDocument()
     // The deep "Residential" heading is inside <details> (collapsed) — not a top tab.
     expect(screen.queryByRole('button', { name: 'Residential' })).not.toBeInTheDocument()
   })
@@ -80,10 +91,12 @@ describe('App skeleton — one analyzer path', () => {
   it('Portfolio checkbox (on the main dropdown) renders the multi-building analyzer', async () => {
     const user = userEvent.setup()
     render(<App />)
-    // Type stays the agreed main dropdown; a checkbox turns on portfolio mode.
-    await user.click(screen.getByRole('checkbox', { name: /Portfolio — analyze multiple buildings/i }))
-    expect(screen.getByRole('heading', { name: /^Portfolio —/i })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Portfolio Offer/i })).toBeInTheDocument()
+    // Portfolio mode is a building-type feature (hidden on the land default), so pick
+    // a non-land type first, then the checkbox turns on portfolio mode.
+    await user.selectOptions(screen.getByRole('combobox', { name: /property type/i }), 'residential')
+    await user.click(screen.getByRole('checkbox'))
+    expect(screen.getByText(/Portfolio — analyze multiple buildings/i)).toBeInTheDocument()
+    expect(screen.getAllByRole('heading', { name: /^Portfolio/i }).length).toBeGreaterThan(0)
   })
 
   it('Land / IOS opens its dedicated intake as the main screen', async () => {

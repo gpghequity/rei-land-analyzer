@@ -19,18 +19,19 @@
 // engines; everything else (DSCR lenses, 8% equity, 5%/25yr seller note, balloon
 // helper, fees, pocket floor) comes straight from loadConstants().
 
-import { loadConstants, annualLoanConstant } from '../../math/constants.js'
+import { loadConstants } from '../../math/constants.js'
 import { ownerEquityCost } from '../../math/storage.js'
 import { remainingPrincipal } from '../../math/sunsetTest.js'
 
-const BUYER_CASH = 100000
-const SELLER_BALLOON_YEARS = 15 // per spec for the $100k + seller structure
+// $100k buyer cash and the 15-yr seller balloon come from the Bible
+// (RESIDENTIAL.sellerFinance.buyerCashFixed / .balloonYears) via loadConstants —
+// see C.BUYER_CASH_FIXED / C.SELLER_BALLOON_YEARS below. No local literals.
 
 // Income assets that use the storage/commercial income-property scenario framework
 // (the 8-row financing matrix). Per the Math Bible routing rules:
 //   self_storage      → storage terms          (75/25 @ 7.25% / 25-yr)
 //   multifamily_large → storage/commercial     (75/25 @ 7.25% / 25-yr) — 20+ units
-//   commercial        → commercial terms       (75/25 @ 7%    / 30-yr)
+//   commercial        → commercial terms       (75/25 @ 7.25% / 25-yr)
 //   mixed_use         → commercial terms       (blended NOI; full split on the Mixed Use tab)
 //   mhp_rv            → storage/commercial      (75/25 @ 7.25% / 25-yr; full engine on the MHP tab)
 // EXCLUDED (do NOT use this matrix):
@@ -48,7 +49,7 @@ export const CAP_MULTIPLIER = { rv_park: 13, ios: 14 }
 
 // Per-class bank terms — LTV is asset-correct per the Math Bible (NOT a blanket
 // 0.70). Storage/MF-20+/MHP carry 75/25 @ 7.25%/25yr; commercial carries its own
-// engine terms (75/25 @ 7%/30yr). These match the dedicated tabs' engines so the
+// engine terms (75/25 @ 7.25%/25yr). These match the dedicated tabs' engines so the
 // Analyze-a-Deal headline reconciles with the Bible (no asset borrows another's math).
 export function bankTermsFor(typeId, C) {
   switch (typeId) {
@@ -62,7 +63,10 @@ export function bankTermsFor(typeId, C) {
       return { ltv: C.LTV_STORAGE, K: C.K_BANK_STORAGE, rateLabel: '75/25 LTV · 7.25% / 25-yr (storage/commercial income terms)' }
     case 'commercial':
     case 'mixed_use':
-      return { ltv: 0.75, K: annualLoanConstant(0.07, 30), rateLabel: '75/25 LTV · 7% / 30-yr (Math Bible commercial income-property terms)' }
+      // Bible-correct commercial income-property terms (7.25% / 25-yr), read live
+      // from COMMERCIAL.mortgageRate / .amortizationYears / .ltv. Was hardcoded
+      // 7% / 30-yr — an 8.6% systematic OVERPAY on every commercial deal.
+      return { ltv: C.LTV_COMMERCIAL, K: C.K_BANK_COMMERCIAL, rateLabel: '75/25 LTV · 7.25% / 25-yr (Math Bible commercial income-property terms)' }
     default:
       return { ltv: C.LTV_STORAGE, K: C.K_BANK_STORAGE, rateLabel: '75/25 LTV · 7.25% / 25-yr' }
   }
@@ -96,13 +100,17 @@ function buildRow(structureKey, label, dscr, noi, terms, C) {
   } else if (structureKey === 'equity_amort') {
     borrowerCost = ownerEquityCost(equity, 'amort')     // equity × K_OWNER_AMORT (8%/25yr)
   } else if (structureKey === 'seller_fi') {
-    const buyerCash = Math.min(BUYER_CASH, equity)
-    sellerFinance = Math.max(0, equity - BUYER_CASH)
+    const buyerCash = Math.min(C.BUYER_CASH_FIXED, equity)
+    sellerFinance = Math.max(0, equity - C.BUYER_CASH_FIXED)
     borrowerBrings = buyerCash
     borrowerCost = ownerEquityCost(buyerCash, 'io')     // 8% IO on the $100k only
     sellerPayment = sellerFinance * C.K_SELLER          // seller note 5%/25yr
+    // BUG FIX 2026-07-16: remainingPrincipal()'s 2nd arg is the annual LOAN
+    // CONSTANT, not the raw rate. This passed C.RATE_SELLER (0.05) where it needed
+    // C.K_SELLER (~0.0706) — the seller balloon balance was wrong on every
+    // seller-finance row. sunsetTest.js calls it correctly with K_SELLER.
     balloon = sellerFinance > 0
-      ? remainingPrincipal(sellerFinance, C.RATE_SELLER, C.AMORT_SELLER, SELLER_BALLOON_YEARS)
+      ? remainingPrincipal(sellerFinance, C.K_SELLER, C.AMORT_SELLER, C.SELLER_BALLOON_YEARS)
       : 0
   }
 
@@ -189,8 +197,8 @@ export function buildIncomeMatrix({ assetType, noi }) {
     bankTerms: terms.rateLabel,
     dscrLenses: lenses,
     equityRate: '8% (IO = 8% interest-only; Amortized = 8% / 25-yr)',
-    sellerNote: `5% / ${C.AMORT_SELLER}-yr, balloon at year ${SELLER_BALLOON_YEARS}`,
-    buyerCashInSellerStructure: BUYER_CASH,
+    sellerNote: `5% / ${C.AMORT_SELLER}-yr, balloon at year ${C.SELLER_BALLOON_YEARS}`,
+    buyerCashInSellerStructure: C.BUYER_CASH_FIXED,
     pocketFloor: C.POCKET_FLOOR,
     note: 'Bank funds its LTV share; equity cost and seller financing apply ONLY to the equity gap, never the full price. Per-asset LTV is Math-Bible-correct (storage/MF-20+ 75/25; commercial 75/25).'
   }

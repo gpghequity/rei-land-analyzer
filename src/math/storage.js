@@ -99,7 +99,9 @@ export function groupA_equityRequirement(maxPurchase, bankDS, annualOpEx) {
   const lineItems = {
     downPayment:    maxPurchase * (1 - C.LTV_STORAGE),
     points:         bankLoan * C.BANK_POINTS_PCT,
-    lenderFees:     C.BANK_LENDER_FEES,
+    // Lender fees are a PERCENT of the bank loan per the Bible (CLOSING_COSTS.
+    // lenderFeesPct = 1%), not a flat $2,500. Wrong SHAPE fixed 2026-07-16.
+    lenderFees:     bankLoan * C.BANK_LENDER_FEES_PCT,
     legal:          C.LEGAL,
     titleInsurance: bankLoan * C.TITLE_PCT,
     environmental:  C.ENVIRONMENTAL,

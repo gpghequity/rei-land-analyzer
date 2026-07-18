@@ -100,7 +100,7 @@ describe('storage.js (Math Bible v3 port)', () => {
     const r = groupA_equityRequirement(1283000, 90000, 25000)
     expect(r.lineItems.downPayment).toBeCloseTo(320750, 0)
     expect(r.lineItems.points).toBeCloseTo(9622.5, 0) // bankLoan × 1%
-    expect(r.lineItems.appraisal).toBe(4500)
+    expect(r.lineItems.appraisal).toBe(4000)   // Bible CLOSING_COSTS.appraisalFee (was 4500)
     expect(r.lineItems.pitiReserve).toBeCloseTo(22500, 0) // 90000 / (12/3) = 22500
     expect(r.workingCapital).toBeCloseTo(6250, 0) // 25000 × 0.25
     expect(r.totalEquityRequired).toBeCloseTo(r.cashToClose + r.workingCapital, 1)

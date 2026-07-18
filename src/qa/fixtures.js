@@ -7,8 +7,8 @@
 // math; they are golden expectations only.
 //
 // Constants (Math Bible v3 / v3.1):
-//   K_BANK_STORAGE = 0.0867368  (7.25% / 25-yr)   storage / MF-20+ / MHP
-//   K_BANK_RESI    = 0.0798363  (7%    / 30-yr)   residential / MF-1-19 / commercial / mixed
+//   K_BANK_STORAGE = 0.0867368  (7.25% / 25-yr)   storage / MF-20+ / MHP / commercial / mixed
+//   K_BANK_RESI    = 0.0798363  (7%    / 30-yr)   residential / MF-1-19
 //   K_SELLER       = 0.0701508  (5%    / 25-yr)   seller note
 
 export const K = { STORAGE: 0.08673682369165958, RESI: 0.07983629942150189, SELLER: 0.07015080498095762 }
@@ -73,12 +73,16 @@ export const FIXTURES = [
   {
     id: 'commercial', label: 'Commercial (Retail/Office/Warehouse)', assetClass: 'Commercial',
     type: 'commercial', engine: 'matrix', noi: 200000,
-    bibleSection: 'Commercial income engine (75/25 @ 7%/30yr)',
+    // GOLDENS CORRECTED 2026-07-16: were frozen at the WRONG 7%/30yr (K=0.079836),
+    // which is an ~8.6% overpay. The Bible sets commercial at 7.25%/25yr
+    // (COMMERCIAL.mortgageRate / .amortizationYears; K=0.086737). These goldens now
+    // encode the Bible-correct terms.
+    bibleSection: 'Commercial income engine (75/25 @ 7.25%/25yr)',
     expected: {
-      ltv: 0.75, rate: 0.07, amort: 30, dscrLens: [1.25, 1.15],
-      maxPurchase: 2672000, aggressive: 2904000, offer: 2672000, bank: 2004000, borrower: 668000, pocket: 40008, status: 'CLEARS_FLOOR'
+      ltv: 0.75, rate: 0.0725, amort: 25, dscrLens: [1.25, 1.15],
+      maxPurchase: 2459000, aggressive: 2673000, offer: 2459000, bank: 1844250, borrower: 614750, pocket: 40036, status: 'CLEARS_FLOOR'
     },
-    formula: 'P_max = NOI ÷ (1.25 × 0.75 × K_commercial[7%/30yr])'
+    formula: 'P_max = NOI ÷ (1.25 × 0.75 × K_commercial[7.25%/25yr])'
   },
 
   // ─── MHP / RV ───────────────────────────────────────────────────────────────
@@ -97,12 +101,14 @@ export const FIXTURES = [
   {
     id: 'mixed', label: 'Mixed Use (blended NOI)', assetClass: 'Mixed Use',
     type: 'mixed_use', engine: 'matrix', noi: 150000,
+    // GOLDENS CORRECTED 2026-07-16: were frozen at 7%/30yr; Bible commercial terms
+    // are 7.25%/25yr (mixed-use routes through the commercial income engine).
     bibleSection: 'Commercial income engine on blended NOI (full split on Mixed Use tab)',
     expected: {
-      ltv: 0.75, rate: 0.07, amort: 30, dscrLens: [1.25, 1.15],
-      maxPurchase: 2004000, aggressive: 2178000, offer: 2004000, bank: 1503000, borrower: 501000, pocket: 30006, status: 'CLEARS_FLOOR'
+      ltv: 0.75, rate: 0.0725, amort: 25, dscrLens: [1.25, 1.15],
+      maxPurchase: 1844000, aggressive: 2005000, offer: 1844000, bank: 1383000, borrower: 461000, pocket: 30043, status: 'CLEARS_FLOOR'
     },
-    formula: 'P_max = NOI ÷ (1.25 × 0.75 × K_commercial[7%/30yr])'
+    formula: 'P_max = NOI ÷ (1.25 × 0.75 × K_commercial[7.25%/25yr])'
   },
 
   // ─── Land / IOS (no offer engine) ───────────────────────────────────────────

@@ -1,79 +1,180 @@
-// READING FROM shared-underwriting-standards (single source of truth)
-// Updated 2026-06-09: Removed local defaults.json snapshot, now reads live from platform standards
-// All tools (Baby Analyzer, Fast Calc, Lender Command, etc.) use same constants from shared pkg.
+// THE NUMBERS THIS ENGINE USES — ALL FROM THE LIVE BIBLE.
+//
+// Steve's rule (2026-07-16): "Every time an app is opened it looks at the Bible.
+// Every time it wants a calculation it gets it from the Bible. The Bible owns
+// everything." So this file holds ZERO underwriting numbers of its own.
+//
+// HOW IT WORKS
+//   - The app boots by fetching the live Bible (shared-underwriting-standards/
+//     bible-client, fail-closed) and calling setBible(standards) ONCE before any
+//     tab renders (see src/main.jsx). It re-fetches + re-seeds on focus/interval,
+//     so a new Bible reaches the running app without a rebuild.
+//   - loadConstants() reads that in-memory live Bible and throws if it is not
+//     present, so no calculation can run on numbers that never came from the Bible.
+//   - Every value is read from an EXACT Bible key. There are NO `|| x` / `?? x`
+//     fallbacks. A `|| 0.04`-style fallback is exactly the bug class we are killing:
+//     it turns a dead/renamed Bible key into a silent wrong number instead of a
+//     loud failure. If a key the engine needs is missing, this THROWS by name.
+//
+// BANNED: a build-time `import STD from 'shared-underwriting-standards'`. That bakes
+// a photocopy of the Bible into the bundle and freezes the app on the Bible as of
+// its last build — the reason four months of "fixes" kept failing. Tests MAY seed a
+// Bible (a test is not the app); see src/tests/setup.js.
 
-import STANDARDS from 'shared-underwriting-standards'
+// The in-memory live Bible standards object. Populated by setBible() at launch.
+let _bible = null
+
+// Seed the live Bible. Called by the app bootstrap (main.jsx) after a successful
+// fetch, and by the test setup. Passing anything but a standards object throws.
+export function setBible(standards) {
+  if (!standards || typeof standards !== 'object' || !standards.GLOBAL || !standards.RESIDENTIAL) {
+    throw new Error('setBible: a valid Bible standards object is required (missing GLOBAL/RESIDENTIAL).')
+  }
+  _bible = standards
+}
+
+export function clearBible() { _bible = null }
+export function hasBible() { return _bible != null }
+
+// Fail-closed accessor. Every numeric read goes through num() so a missing or
+// non-finite Bible value throws BY NAME instead of poisoning the math with NaN.
+function requireBible() {
+  if (!_bible) {
+    throw new Error(
+      'BIBLE UNAVAILABLE — refusing to calculate. The live Bible was never seeded ' +
+      '(setBible was not called). No fallback is used on purpose: a stale/guessed ' +
+      'number is worse than no answer.'
+    )
+  }
+  return _bible
+}
+
+function num(v, name) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    throw new Error(`Bible missing or non-numeric: ${name} (got ${v === undefined ? 'undefined' : JSON.stringify(v)}). Refusing to guess.`)
+  }
+  return v
+}
 
 export function loadConstants() {
+  const B = requireBible()
+  const GLOB = B.GLOBAL
+  const RES = B.RESIDENTIAL
+  const STOR = B.STORAGE
+  const COMM = B.COMMERCIAL
+  const CC = B.CLOSING_COSTS
+  const REFI = B.REFI
+  const GROWTH = B.GROWTH
+
+  if (!GLOB || !RES || !STOR || !COMM || !CC || !REFI || !GROWTH) {
+    throw new Error('Bible is missing a required top-level section (GLOBAL/RESIDENTIAL/STORAGE/COMMERCIAL/CLOSING_COSTS/REFI/GROWTH).')
+  }
+
   const flat = {}
 
-  // Flatten RESIDENTIAL standards
-  const RES = STANDARDS.RESIDENTIAL || {}
-  flat.RATE_BANK_RESI = RES.mortgageRate
-  flat.AMORT_BANK_RESI = RES.amortizationYears
-  flat.LTV_RESI = RES.ltv
-  flat.DSCR_RESI = RES.dscr || 1.25  // Default: 1.25 DSCR for residential rental
+  // ── RESIDENTIAL bank terms ────────────────────────────────────────────────
+  flat.RATE_BANK_RESI = num(RES.mortgageRate, 'RESIDENTIAL.mortgageRate')
+  flat.AMORT_BANK_RESI = num(RES.amortizationYears, 'RESIDENTIAL.amortizationYears')
+  flat.LTV_RESI = num(RES.ltv, 'RESIDENTIAL.ltv')
+  // Bible RESIDENTIAL.dscr is a single number (1.25). Was `RES.dscr || 1.25`, which
+  // would have silently produced 1.25 if the key were an object/undefined — the bug
+  // class. Read it directly and throw if it is not a finite number.
+  flat.DSCR_RESI = num(RES.dscr, 'RESIDENTIAL.dscr')
 
-  // Flatten STORAGE standards
-  const STOR = STANDARDS.STORAGE || {}
-  flat.RATE_BANK_STORAGE = STOR.mortgageRate
-  flat.AMORT_BANK_STORAGE = STOR.amortizationYears
-  flat.LTV_STORAGE = STOR.ltv
-  flat.DSCR_CONSERVATIVE = STOR.dscrConservative || 1.25
-  flat.DSCR_STRETCH = STOR.dscrStretch || 1.15
+  // ── STORAGE bank terms ────────────────────────────────────────────────────
+  flat.RATE_BANK_STORAGE = num(STOR.mortgageRate, 'STORAGE.mortgageRate')
+  flat.AMORT_BANK_STORAGE = num(STOR.amortizationYears, 'STORAGE.amortizationYears')
+  flat.LTV_STORAGE = num(STOR.ltv, 'STORAGE.ltv')
+  // Bible STORAGE.dscr is an object { standard, stretch }. The old code read
+  // STOR.dscrConservative / STOR.dscrStretch — keys that DO NOT EXIST — and fell
+  // back to `|| 1.25` / `|| 1.15`. Dead-key + fallback = the bug class (it only
+  // happened to land on the right numbers). Read the real object keys.
+  flat.DSCR_CONSERVATIVE = num(STOR.dscr && STOR.dscr.standard, 'STORAGE.dscr.standard')
+  flat.DSCR_STRETCH = num(STOR.dscr && STOR.dscr.stretch, 'STORAGE.dscr.stretch')
 
-  // Flatten GLOBAL constants
-  const GLOB = STANDARDS.GLOBAL || {}
-  flat.POCKET_FLOOR = GLOB.pocketCashFloor || 10000
-  flat.EXPENSE_FLOOR = 0.35
+  // ── COMMERCIAL bank terms (income-property matrix) ────────────────────────
+  // Homed so incomeMatrix stops pricing commercial at a hardcoded 7% / 30yr.
+  flat.RATE_BANK_COMMERCIAL = num(COMM.mortgageRate, 'COMMERCIAL.mortgageRate')       // 0.0725
+  flat.AMORT_BANK_COMMERCIAL = num(COMM.amortizationYears, 'COMMERCIAL.amortizationYears') // 25
+  flat.LTV_COMMERCIAL = num(COMM.ltv, 'COMMERCIAL.ltv')                               // 0.75
 
-  // Calculate K constants from rates + amortization
+  // ── Floors ────────────────────────────────────────────────────────────────
+  flat.POCKET_FLOOR = num(GLOB.pocketCashFloor, 'GLOBAL.pocketCashFloor')
+  flat.EXPENSE_FLOOR = num(STOR.expenseFloor, 'STORAGE.expenseFloor')
+  flat.STORAGE_EXPENSE_FLOOR = flat.EXPENSE_FLOOR   // StorageTab references this name
+
+  // ── Derived loan constants ────────────────────────────────────────────────
   flat.K_BANK_STORAGE = annualLoanConstant(flat.RATE_BANK_STORAGE, flat.AMORT_BANK_STORAGE)
-  flat.K_BANK_RESI    = annualLoanConstant(flat.RATE_BANK_RESI,    flat.AMORT_BANK_RESI)
-  flat.K_OWNER_IO     = 0.08
-  flat.K_OWNER_AMORT  = annualLoanConstant(0.08, 25)
+  flat.K_BANK_RESI = annualLoanConstant(flat.RATE_BANK_RESI, flat.AMORT_BANK_RESI)
+  flat.K_BANK_COMMERCIAL = annualLoanConstant(flat.RATE_BANK_COMMERCIAL, flat.AMORT_BANK_COMMERCIAL)
 
-  // Seller-finance constants (Math Bible group B financing)
-  flat.RATE_SELLER    = 0.05                                       // 5% seller note rate
-  flat.AMORT_SELLER   = 25                                         // 25-year amortization
-  flat.K_SELLER       = annualLoanConstant(flat.RATE_SELLER, flat.AMORT_SELLER)
+  // ── Owner-equity treatment (interest-only / amortized) ────────────────────
+  // 8% owner-financing rate; amortized term from the Bible's storage capital-stack
+  // scenario (groupA_v3 amortized-equity term = 25yr @ 8%).
+  const ownerRate = num(RES.ownerFinanceRate, 'RESIDENTIAL.ownerFinanceRate')  // 0.08
+  const ownerAmortTerm = num(
+    STOR.scenarios && STOR.scenarios.groupA_v3_1_25 && STOR.scenarios.groupA_v3_1_25.equityTerm,
+    'STORAGE.scenarios.groupA_v3_1_25.equityTerm'
+  ) // 25
+  flat.K_OWNER_IO = ownerRate
+  flat.K_OWNER_AMORT = annualLoanConstant(ownerRate, ownerAmortTerm)
 
-  // Closing costs and fees (equity requirement line items) from Math Bible
-  flat.WHOLESALE_FEE  = GLOB.wholesaleFeeAmount || 10000           // $10k assignment fee
-  flat.CLOSING_COSTS  = GLOB.closingCostsFlatAmount || 2000        // $2k flat closing costs
-  flat.TITLE_PCT      = GLOB.titleEscrowRecordingPercent || 0.005  // 0.5% title insurance
-  flat.TRANSFER_TAX_PCT = GLOB.transferTaxPercent || 0.01          // 1% transfer tax
-  flat.APPRAISAL      = 4500                                       // $4.5k appraisal (standard)
-  flat.SURVEY         = 800                                        // $800 survey
-  flat.LEGAL          = 3000                                       // $3k legal cost
-  flat.ENVIRONMENTAL  = 500                                        // $500 environmental inspection
-  flat.INSURANCE_SETUP = 400                                       // $400 insurance setup
-  flat.BANK_POINTS_PCT = 0.01                                      // 1% lender points
-  flat.BANK_LENDER_FEES = 2500                                     // $2.5k flat lender fee
-  flat.PITI_RESERVE_MONTHS = 3                                     // 3 months PITI/tax reserve
-  flat.WORKING_CAPITAL_PCT = 0.25                                  // 25% working capital reserve (NOT 10%)
+  // ── Seller-finance (storage/commercial seller note: 5% / 25yr) ────────────
+  flat.RATE_SELLER = num(STOR.sellerFinance && STOR.sellerFinance.rate, 'STORAGE.sellerFinance.rate')       // 0.05
+  flat.AMORT_SELLER = num(STOR.sellerFinance && STOR.sellerFinance.amortYears, 'STORAGE.sellerFinance.amortYears') // 25
+  flat.K_SELLER = annualLoanConstant(flat.RATE_SELLER, flat.AMORT_SELLER)
 
-  // Residential MVM pads (maintenance & vacancy management) — applies to gross income, per Math Bible
-  flat.PAD_LIGHT      = RES.expensePads?.light ?? 0                // 0% MVM
-  flat.PAD_STANDARD   = RES.expensePads?.standard ?? 0.15          // 15% MVM (standard conservative)
-  flat.PAD_HARSH      = RES.expensePads?.harsh ?? 0.30             // 30% MVM (very conservative)
+  // ── Closing / fee line items (equity requirement) ─────────────────────────
+  flat.WHOLESALE_FEE = num(GLOB.wholesaleFeeAmount, 'GLOBAL.wholesaleFeeAmount')
+  flat.CLOSING_COSTS = num(GLOB.closingCostsFlatAmount, 'GLOBAL.closingCostsFlatAmount')
+  flat.TITLE_PCT = num(GLOB.titleEscrowRecordingPercent, 'GLOBAL.titleEscrowRecordingPercent')
+  flat.TRANSFER_TAX_PCT = num(GLOB.transferTaxPercent, 'GLOBAL.transferTaxPercent')
+  flat.APPRAISAL = num(CC.appraisalFee, 'CLOSING_COSTS.appraisalFee')                 // 4000 (was hardcoded 4500)
+  flat.SURVEY = num(CC.surveyFee, 'CLOSING_COSTS.surveyFee')                          // 800
+  flat.LEGAL = num(CC.legalFee, 'CLOSING_COSTS.legalFee')                             // 3000
+  flat.ENVIRONMENTAL = num(CC.environmentalFee, 'CLOSING_COSTS.environmentalFee')     // 3500 (was hardcoded 500 — 7x low)
+  flat.INSURANCE_SETUP = num(CC.insuranceSetupFee, 'CLOSING_COSTS.insuranceSetupFee') // 400
+  flat.BANK_POINTS_PCT = num(CC.bankPointsPct, 'CLOSING_COSTS.bankPointsPct')         // 0.01
+  // SHAPE FIX: lender fees are a PERCENT of the bank loan (Bible CLOSING_COSTS.
+  // lenderFeesPct = 0.01), not a flat $2,500. storage.js multiplies by bankLoan.
+  flat.BANK_LENDER_FEES_PCT = num(CC.lenderFeesPct, 'CLOSING_COSTS.lenderFeesPct')    // 0.01
+  flat.PITI_RESERVE_MONTHS = num(STOR.pitiReserveMonths, 'STORAGE.pitiReserveMonths') // 3
+  flat.WORKING_CAPITAL_PCT = num(STOR.workingCapitalPct, 'STORAGE.workingCapitalPct') // 0.25
 
-  // Residential MAO (maximum allowable offer) = ARV × factor - rehab
-  flat.MAO_FACTOR     = RES.arvMultiplier || 0.70                  // 70% of ARV for cash offer
+  // ── Residential MVM pads (0% / 15% / 30%) ─────────────────────────────────
+  flat.PAD_LIGHT = num(RES.expensePads && RES.expensePads.light, 'RESIDENTIAL.expensePads.light')       // 0
+  flat.PAD_STANDARD = num(RES.expensePads && RES.expensePads.standard, 'RESIDENTIAL.expensePads.standard') // 0.15 (was 0.20)
+  flat.PAD_HARSH = num(RES.expensePads && RES.expensePads.harsh, 'RESIDENTIAL.expensePads.harsh')       // 0.30 (was 0.33)
 
-  // Residential hard mode and ARV calculations
-  flat.CLOSING_RESI   = 2000                                       // Residential closing costs
-  flat.RATE_OWNER     = 0.08                                       // Owner equity rate (8%)
-  flat.ARV_MIN_COMPS  = 3                                          // Minimum 3 comps for ARV confidence
-  flat.ARV_PERCENTILE = GLOB.arvPercentile || 0.40                 // 40th percentile of comp range
+  // ── Residential MAO / ARV ─────────────────────────────────────────────────
+  flat.MAO_FACTOR = num(RES.arvMultiplier, 'RESIDENTIAL.arvMultiplier')          // 0.70
+  flat.CLOSING_RESI = num(GLOB.closingCostsFlatAmount, 'GLOBAL.closingCostsFlatAmount') // 2000
+  flat.RATE_OWNER = ownerRate                                                    // 0.08
+  flat.ARV_MIN_COMPS = num(GLOB.arvMinComps, 'GLOBAL.arvMinComps')               // 3
+  flat.ARV_PERCENTILE = num(GLOB.arvPercentile, 'GLOBAL.arvPercentile')          // 0.40 (40th percentile rule)
 
-  // Kicker and sunset projections (seller note enhancements)
-  flat.WINDOW_YEARS   = 5                                          // Projection window for kicker (5 years)
-  flat.KICKER_DEFAULT = 0.05                                       // Default kicker rate (5% per year)
+  // ── Flipper projection (were undefined -> NaN on screen) ──────────────────
+  flat.SELLING_COSTS_PCT = num(GLOB.sellingCostsPercent, 'GLOBAL.sellingCostsPercent') // 0.08
+  flat.HOLDING_PER_MONTH = num(GLOB.holdingCostPerMonth, 'GLOBAL.holdingCostPerMonth') // 350
+  flat.HOLDING_MONTHS = num(GLOB.holdingMonthsDefault, 'GLOBAL.holdingMonthsDefault')  // 6
 
-  // rampTest and sunsetTest constants
-  flat.NOI_GROWTH_CONSERVATIVE = 0.03                              // 3% annual NOI growth (conservative)
-  flat.K_REFI_15 = annualLoanConstant(0.065, 15)                   // Refi 15-yr @ 6.5% rate
+  // ── Seller kicker projection (were undefined -> NaN on screen) ────────────
+  flat.PCT_DEFAULT = num(STOR.sellerKicker && STOR.sellerKicker.pctDefault, 'STORAGE.sellerKicker.pctDefault')     // 0.20
+  flat.CAP_DEFAULT = num(STOR.sellerKicker && STOR.sellerKicker.capCumulative, 'STORAGE.sellerKicker.capCumulative') // 50000
+  flat.WINDOW_YEARS = num(STOR.sellerKicker && STOR.sellerKicker.windowYears, 'STORAGE.sellerKicker.windowYears')  // 5
+  flat.KICKER_DEFAULT = num(GROWTH.noiStretch, 'GROWTH.noiStretch')              // 0.05 default growth lens
+
+  // ── Growth / refinance takeout ────────────────────────────────────────────
+  flat.NOI_GROWTH_CONSERVATIVE = num(GROWTH.noiConservative, 'GROWTH.noiConservative') // 0.03
+  // Refi takeout: 7.25% / 15yr (was hardcoded 6.5% — understated refi debt service).
+  flat.K_REFI_15 = annualLoanConstant(
+    num(REFI.mortgageRate, 'REFI.mortgageRate'),
+    num(REFI.amortizationYears, 'REFI.amortizationYears')
+  )
+
+  // ── $100k-buyer + seller-finance structure (income matrix) ────────────────
+  flat.BUYER_CASH_FIXED = num(RES.sellerFinance && RES.sellerFinance.buyerCashFixed, 'RESIDENTIAL.sellerFinance.buyerCashFixed')   // 100000
+  flat.SELLER_BALLOON_YEARS = num(RES.sellerFinance && RES.sellerFinance.balloonYears, 'RESIDENTIAL.sellerFinance.balloonYears')   // 15
 
   return flat
 }
