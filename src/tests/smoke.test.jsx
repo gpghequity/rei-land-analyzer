@@ -84,7 +84,7 @@ describe('App skeleton — one analyzer path', () => {
     const user = userEvent.setup()
     render(<App />)
     await user.click(screen.getByRole('button', { name: 'QA Runner' }))
-    expect(screen.getByRole('heading', { name: /Baby Analyzer QA Runner/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Land Analyzer QA Runner/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Run all QA tests/i })).toBeInTheDocument()
   })
 

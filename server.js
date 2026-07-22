@@ -73,5 +73,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`Baby Analyzer server running on port ${PORT}`);
+  console.log(`Land Analyzer server running on port ${PORT}`);
 });
