@@ -38,7 +38,7 @@ export function hasBible() { return _bible != null }
 
 // Fail-closed accessor. Every numeric read goes through num() so a missing or
 // non-finite Bible value throws BY NAME instead of poisoning the math with NaN.
-function requireBible() {
+export function requireBible() {
   if (!_bible) {
     throw new Error(
       'BIBLE UNAVAILABLE — refusing to calculate. The live Bible was never seeded ' +
